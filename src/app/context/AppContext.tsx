@@ -471,12 +471,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteCashTransactionsByDateRange = (startDate: Date, endDate: Date) => {
     try {
-      const filtered = cashTransactions.filter(t => {
-        const tDate = new Date(t.timestamp);
-        return tDate < startDate || tDate > endDate;
+      import('../../services/caja.service').then(cajaService => {
+        cajaService.deleteMovimientosByDateRange(startDate, endDate).then((count) => {
+          console.log(`${count} transacciones eliminadas`);
+        }).catch((error) => {
+          console.error('Error eliminando transacciones:', error);
+        });
       });
-      setCashTransactions(filtered);
-      saveToStorage(STORAGE_KEYS.CASH_TRANSACTIONS, filtered);
     } catch (error) {
       console.error('Error eliminando transacciones de caja:', error);
       throw error;

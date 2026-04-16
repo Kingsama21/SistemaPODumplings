@@ -8,6 +8,8 @@ import {
   onSnapshot,
   Unsubscribe,
   Timestamp,
+  deleteDoc,
+  doc,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { MovimientoCaja, ResumenCaja } from './types';
@@ -230,6 +232,33 @@ export function onResumenCajaChange(
     );
   } catch (error) {
     console.error('Error configurando listener de resumen:', error);
+    throw error;
+  }
+}
+
+/**
+ * Elimina todos los movimientos dentro de un rango de fechas
+ */
+export async function deleteMovimientosByDateRange(startDate: Date, endDate: Date): Promise<number> {
+  try {
+    const q = query(
+      collection(db, CASH_COLLECTION),
+      where('createdAt', '>=', Timestamp.fromDate(startDate)),
+      where('createdAt', '<=', Timestamp.fromDate(endDate))
+    );
+    
+    const querySnapshot = await getDocs(q);
+    let deletedCount = 0;
+    
+    // Eliminar cada documento encontrado
+    for (const docSnapshot of querySnapshot.docs) {
+      await deleteDoc(doc(db, CASH_COLLECTION, docSnapshot.id));
+      deletedCount++;
+    }
+    
+    return deletedCount;
+  } catch (error) {
+    console.error('Error eliminando movimientos por rango de fechas:', error);
     throw error;
   }
 }
