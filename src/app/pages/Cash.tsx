@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useApp } from '../context/AppContext';
-import { ArrowLeft, Plus, DollarSign, TrendingUp, TrendingDown, X, Save, CreditCard, Landmark } from 'lucide-react';
+import { ArrowLeft, Plus, DollarSign, TrendingUp, TrendingDown, X, Save, CreditCard, Landmark, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Cash() {
   const navigate = useNavigate();
-  const { cashTransactions, addExpense } = useApp();
+  const { cashTransactions, addExpense, deleteCashTransactionsByDateRange } = useApp();
 
   const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [showClearForm, setShowClearForm] = useState(false);
+  const [clearDateStart, setClearDateStart] = useState('');
+  const [clearDateEnd, setClearDateEnd] = useState('');
   const [expenseForm, setExpenseForm] = useState({
     amount: '',
     description: '',
@@ -67,6 +70,29 @@ export default function Cash() {
     setExpenseForm({ amount: '', description: '' });
   };
 
+  const handleClearData = () => {
+    if (!clearDateStart || !clearDateEnd) {
+      toast.error('Por favor selecciona un rango de fechas');
+      return;
+    }
+
+    const startDate = new Date(clearDateStart);
+    const endDate = new Date(clearDateEnd);
+
+    if (startDate > endDate) {
+      toast.error('La fecha de inicio debe ser anterior a la fecha de fin');
+      return;
+    }
+
+    if (confirm(`¿Estás seguro de que deseas eliminar todas las transacciones entre ${clearDateStart} y ${clearDateEnd}? Esta acción no se puede deshacer.`)) {
+      deleteCashTransactionsByDateRange(startDate, endDate);
+      toast.success('Transacciones eliminadas');
+      setShowClearForm(false);
+      setClearDateStart('');
+      setClearDateEnd('');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -112,6 +138,14 @@ export default function Cash() {
               >
                 <Plus size={20} />
                 Registrar Gasto
+              </button>
+              <button
+                onClick={() => setShowClearForm(true)}
+                className="bg-red-600 text-white px-6 py-2 rounded hover:bg-red-700 transition-colors flex items-center gap-2"
+                style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}
+              >
+                <Trash2 size={20} />
+                Limpiar Datos
               </button>
             </div>
           </div>
@@ -269,6 +303,74 @@ export default function Cash() {
           )}
         </div>
       </main>
+
+      {/* Clear Data Modal */}
+      {showClearForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-red-300 rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 600, color: '#dc2626' }}>
+                Limpiar Datos de Caja
+              </h3>
+              <button onClick={() => setShowClearForm(false)} className="p-2 hover:bg-secondary rounded">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="mb-4 p-3 bg-red-100 border border-red-200 rounded">
+              <p className="text-sm text-red-800">
+                ⚠️ Esto eliminará TODAS las transacciones de caja en el rango de fechas seleccionado. Esta acción NO se puede deshacer.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block mb-2" style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}>
+                  Fecha de Inicio *
+                </label>
+                <input
+                  type="date"
+                  value={clearDateStart}
+                  onChange={(e) => setClearDateStart(e.target.value)}
+                  className="w-full px-4 py-2 border border-border rounded bg-input"
+                  style={{ fontFamily: 'var(--font-sans)' }}
+                />
+              </div>
+
+              <div>
+                <label className="block mb-2" style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}>
+                  Fecha de Fin *
+                </label>
+                <input
+                  type="date"
+                  value={clearDateEnd}
+                  onChange={(e) => setClearDateEnd(e.target.value)}
+                  className="w-full px-4 py-2 border border-border rounded bg-input"
+                  style={{ fontFamily: 'var(--font-sans)' }}
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowClearForm(false)}
+                  className="flex-1 border border-border px-4 py-3 rounded hover:bg-secondary"
+                  style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleClearData}
+                  className="flex-1 bg-red-600 text-white px-4 py-3 rounded hover:bg-red-700 flex items-center justify-center gap-2"
+                  style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}
+                >
+                  <Trash2 size={20} />
+                  Eliminar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Expense Modal */}
       {showExpenseForm && (

@@ -1,12 +1,15 @@
 import { useNavigate } from 'react-router';
 import { useApp } from '../context/AppContext';
-import { ArrowLeft, CheckCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Edit2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { abrirParaImprimirPDF } from '../../services/ticket-pdf.service';
+import { useState } from 'react';
 
 export default function Tickets() {
   const navigate = useNavigate();
-  const { orders, updateOrderStatus } = useApp();
+  const { orders, updateOrderStatus, updateOrderPaymentMethod } = useApp();
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [selectedPayment, setSelectedPayment] = useState<'cash' | 'card' | 'transfer' | null>(null);
 
   const readyOrders = orders.filter(o => o.status === 'ready');
 
@@ -36,6 +39,13 @@ export default function Tickets() {
       console.error('ERROR en handleComplete:', error);
       toast.error('Error al completar la orden');
     }
+  };
+
+  const handleUpdatePayment = (orderId: string, newMethod: 'cash' | 'card' | 'transfer') => {
+    updateOrderPaymentMethod(orderId, newMethod);
+    toast.success('Método de pago actualizado');
+    setEditingPaymentId(null);
+    setSelectedPayment(null);
   };
 
   return (
@@ -122,9 +132,50 @@ export default function Tickets() {
                 </div>
 
                 {/* Método de Pago */}
-                <p className="text-center font-bold text-sm mb-4">
-                  {order.paymentMethod === 'cash' ? 'EFECTIVO' : order.paymentMethod === 'card' ? 'TARJETA' : 'TRANSFERENCIA'}
-                </p>
+                {editingPaymentId === order.id ? (
+                  <div className="mb-4 p-3 bg-yellow-100 border border-yellow-300 rounded">
+                    <p className="text-sm font-semibold mb-2 text-center">Cambiar método de pago:</p>
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => handleUpdatePayment(order.id, 'cash')}
+                        className="w-full bg-blue-600 text-white py-2 rounded text-sm font-semibold hover:bg-blue-700"
+                      >
+                        EFECTIVO
+                      </button>
+                      <button
+                        onClick={() => handleUpdatePayment(order.id, 'card')}
+                        className="w-full bg-green-600 text-white py-2 rounded text-sm font-semibold hover:bg-green-700"
+                      >
+                        TARJETA
+                      </button>
+                      <button
+                        onClick={() => handleUpdatePayment(order.id, 'transfer')}
+                        className="w-full bg-purple-600 text-white py-2 rounded text-sm font-semibold hover:bg-purple-700"
+                      >
+                        TRANSFERENCIA
+                      </button>
+                      <button
+                        onClick={() => setEditingPaymentId(null)}
+                        className="w-full bg-gray-400 text-white py-2 rounded text-sm font-semibold hover:bg-gray-500"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-between items-center mb-4">
+                    <p className="text-center font-bold text-sm flex-1">
+                      {order.paymentMethod === 'cash' ? 'EFECTIVO' : order.paymentMethod === 'card' ? 'TARJETA' : 'TRANSFERENCIA'}
+                    </p>
+                    <button
+                      onClick={() => setEditingPaymentId(order.id)}
+                      className="ml-2 p-2 hover:bg-gray-200 rounded transition-colors"
+                      title="Editar método de pago"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                  </div>
+                )}
 
                 {/* Separador */}
                 <div className="border-t-2 border-dashed border-black mb-4" />

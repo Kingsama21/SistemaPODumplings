@@ -104,6 +104,8 @@ interface AppContextType {
     deliveryInfo?: { customerName: string; phone: string; address: string }
   ) => Promise<string>;
   updateOrderStatus: (id: string, status: Order['status']) => void;
+  updateOrderPaymentMethod: (id: string, paymentMethod: 'cash' | 'card' | 'transfer') => void;
+  deleteCashTransactionsByDateRange: (startDate: Date, endDate: Date) => void;
   addExpense: (amount: number, description: string) => void;
   // Ingredientes/Insumos (con inventario)
   addIngredient: (ingredient: Omit<Ingredient, 'id'>) => void;
@@ -454,6 +456,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updateOrderPaymentMethod = (id: string, paymentMethod: 'cash' | 'card' | 'transfer') => {
+    try {
+      const updated = orders.map(o => 
+        o.id === id ? { ...o, paymentMethod } : o
+      );
+      setOrders(updated);
+      saveToStorage(STORAGE_KEYS.ORDERS, updated);
+    } catch (error) {
+      console.error('Error actualizando método de pago:', error);
+      throw error;
+    }
+  };
+
+  const deleteCashTransactionsByDateRange = (startDate: Date, endDate: Date) => {
+    try {
+      const filtered = cashTransactions.filter(t => {
+        const tDate = new Date(t.timestamp);
+        return tDate < startDate || tDate > endDate;
+      });
+      setCashTransactions(filtered);
+      saveToStorage(STORAGE_KEYS.CASH_TRANSACTIONS, filtered);
+    } catch (error) {
+      console.error('Error eliminando transacciones de caja:', error);
+      throw error;
+    }
+  };
+
   // ============================================
   // FUNCIONES PARA CAJA
   // ============================================
@@ -667,6 +696,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deleteCategory,
         createOrder,
         updateOrderStatus,
+        updateOrderPaymentMethod,
+        deleteCashTransactionsByDateRange,
         addExpense,
         // Ingredientes/Insumos
         addIngredient,
