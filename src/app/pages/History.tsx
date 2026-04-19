@@ -12,7 +12,8 @@ export default function History() {
   const [expandedOrderId, setExpandedOrderId] = useState(null);
 
   const filteredOrders = useMemo(() => {
-    const completed = orders.filter((o) => o.status === "completed");
+    // Mostrar todas las órdenes excepto canceladas (para ver historial completo del día)
+    const allOrders = orders.filter((o) => o.status !== 'cancelled');
     const now = new Date();
     let dateStart = new Date();
     
@@ -33,9 +34,9 @@ export default function History() {
     }
     
     now.setHours(23, 59, 59, 999);
-    return completed.filter((o) => {
-      const d = new Date(o.createdAt || o.timestamp || 0);
-      return d >= dateStart && d <= now;
+    return allOrders.filter((o) => {
+      const orderDate = new Date(o.timestamp ?? o.createdAt ?? new Date());
+      return orderDate >= dateStart && orderDate <= now;
     });
   }, [orders, filterType]);
 
@@ -48,13 +49,18 @@ export default function History() {
   const topProducts = useMemo(() => {
     const map = new Map();
     filteredOrders.forEach((order) => {
-      order.items.forEach((item) => {
-        const k = item.product.id;
-        const ex = map.get(k) || { name: item.product.name, qty: 0, revenue: 0 };
-        ex.qty += item.quantity;
-        ex.revenue += item.product.price * item.quantity;
-        map.set(k, ex);
-      });
+      if (order.items && order.items.length > 0) {
+        order.items.forEach((item) => {
+          const product = item.product || (typeof item === 'object' && 'id' in item ? item : null);
+          if (product && product.id && product.name) {
+            const k = product.id;
+            const ex = map.get(k) || { name: product.name, qty: 0, revenue: 0 };
+            ex.qty += item.quantity || 0;
+            ex.revenue += (product.price || 0) * (item.quantity || 1);
+            map.set(k, ex);
+          }
+        });
+      }
     });
     return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
   }, [filteredOrders]);
@@ -236,7 +242,7 @@ export default function History() {
                               />
                             </button>
                           </td>
-                          <td className="py-2 px-2">{o.numero || "-"}</td>
+                          <td className="py-2 px-2">{o.id || "-"}</td>
                           <td className="py-2 px-2">
                             {o.orderType === "local" ? "Local" : "Delivery"}
                           </td>
@@ -252,7 +258,7 @@ export default function History() {
                           </td>
                           <td className="py-2 px-2 text-xs">
                             {new Date(
-                              o.createdAt || o.timestamp || 0
+                              o.timestamp ?? o.createdAt ?? new Date()
                             ).toLocaleDateString("es-MX")}
                           </td>
                           <td className="py-2 px-2 text-right font-bold text-accent">
@@ -267,32 +273,46 @@ export default function History() {
                                   Items pedidos:
                                 </h4>
                                 <div className="space-y-2">
-                                  {o.items.map((item, idx) => (
-                                    <div
-                                      key={idx}
-                                      className="flex justify-between items-center text-sm bg-background/50 p-2 rounded"
-                                    >
-                                      <div className="flex-1">
-                                        <p className="font-medium">
-                                          {item.product.name}
-                                        </p>
-                                        {item.notes && (
-                                          <p className="text-xs text-muted-foreground">
-                                            Notas: {item.notes}
-                                          </p>
-                                        )}
-                                      </div>
-                                      <div className="text-right ml-4">
-                                        <p className="font-semibold">x{item.quantity}</p>
-                                        <p className="text-xs text-muted-foreground">
-                                          ${(
-                                            item.product.price *
-                                            item.quantity
-                                          ).toFixed(2)}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  ))}
+                                  {o.items && o.items.length > 0 ? (
+                                    o.items.map((item, idx) => {
+                                      const product = item.product || (typeof item === 'object' && 'name' in item ? item : null);
+                                      if (!product || !product.name) {
+                                        return (
+                                          <div key={idx} className="text-sm text-muted-foreground bg-background/50 p-2 rounded">
+                                            Item sin información
+                                          </div>
+                                        );
+                                      }
+                                      return (
+                                        <div
+                                          key={idx}
+                                          className="flex justify-between items-center text-sm bg-background/50 p-2 rounded"
+                                        >
+                                          <div className="flex-1">
+                                            <p className="font-medium">
+                                              {product.name}
+                                            </p>
+                                            {item.notes && (
+                                              <p className="text-xs text-muted-foreground">
+                                                Notas: {item.notes}
+                                              </p>
+                                            )}
+                                          </div>
+                                          <div className="text-right ml-4">
+                                            <p className="font-semibold">x{item.quantity}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                              ${(
+                                                (product.price || 0) *
+                                                (item.quantity || 1)
+                                              ).toFixed(2)}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="text-sm text-muted-foreground">Sin items</div>
+                                  )}
                                 </div>
                               </div>
                             </td>

@@ -114,12 +114,22 @@ export default function Tickets() {
 
                 {/* Items */}
                 <div className="space-y-2 mb-4">
-                  {order.items.map((item, idx) => (
-                    <div key={idx} className="flex justify-between text-sm">
-                      <span>{item.quantity}x {item.product.name}</span>
-                      <span className="font-semibold">${(item.product.price * item.quantity).toFixed(2)}</span>
-                    </div>
-                  ))}
+                  {order.items && order.items.length > 0 ? (
+                    order.items.map((item, idx) => {
+                      const product = item.product || (typeof item === 'object' && 'name' in item ? item : null);
+                      if (!product || !product.name) {
+                        return <div key={idx} className="text-sm text-muted-foreground">Item sin información</div>;
+                      }
+                      return (
+                        <div key={idx} className="flex justify-between text-sm">
+                          <span>{item.quantity}x {product.name}</span>
+                          <span className="font-semibold">${((product.price || 0) * (item.quantity || 1)).toFixed(2)}</span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-sm text-muted-foreground">Sin items</div>
+                  )}
                 </div>
 
                 {/* Separador */}

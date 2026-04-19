@@ -96,14 +96,28 @@ export default function Kitchen() {
 
             {/* Order Items */}
             <div className="border-t border-border pt-3 mb-4 space-y-2">
-              {order.items.map((item, idx) => (
-                <div key={idx} className="flex justify-between">
-                  <span style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}>
-                    {item.quantity}x
-                  </span>
-                  <span className="flex-1 ml-3">{item.product.name}</span>
-                </div>
-              ))}
+              {order.items && order.items.length > 0 ? (
+                order.items.map((item, idx) => {
+                  const product = item.product || (typeof item === 'object' && 'name' in item ? item : null);
+                  if (!product || !product.name) {
+                    return (
+                      <div key={idx} className="flex justify-between text-muted-foreground">
+                        <span>Item sin info</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={idx} className="flex justify-between">
+                      <span style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}>
+                        {item.quantity}x
+                      </span>
+                      <span className="flex-1 ml-3">{product.name}</span>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-muted-foreground text-sm">Sin items</div>
+              )}
             </div>
 
             {/* Action Buttons */}

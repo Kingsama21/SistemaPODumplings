@@ -53,6 +53,7 @@ export function onMovimientosChange(
         const movimientos = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
+          timestamp: doc.data().timestamp?.toDate() || new Date(),
           createdAt: doc.data().createdAt?.toDate() || new Date(),
         } as MovimientoCaja));
         callback(movimientos);
@@ -77,13 +78,24 @@ export async function registrarIngreso(
   ordenId?: string
 ): Promise<string> {
   try {
-    const docRef = await addDoc(collection(db, CASH_COLLECTION), {
-      tipo: 'ingreso',
-      monto,
-      motivo,
-      ordenId,
-      createdAt: new Date(),
-    });
+    const now = Timestamp.now();
+    const movimiento: any = {
+      type: 'income',
+      amount: monto,
+      description: motivo,
+      timestamp: now,
+      createdAt: now,
+      paymentMethod: motivo.includes('Efectivo') ? 'cash' : motivo.includes('Tarjeta') ? 'card' : 'transfer',
+    };
+
+    // Guardar ordenId si existe
+    if (ordenId) {
+      movimiento.ordenId = ordenId;
+      console.log(`✓ Registrando ingreso para orden ${ordenId}:`, { monto, motivo });
+    }
+
+    const docRef = await addDoc(collection(db, CASH_COLLECTION), movimiento);
+    console.log(`✓ Ingreso guardado en Firebase con ID: ${docRef.id}, ordenId: ${ordenId}`);
     return docRef.id;
   } catch (error) {
     console.error('Error registrando ingreso:', error);
@@ -99,12 +111,15 @@ export async function registrarEgreso(
   motivo: string
 ): Promise<string> {
   try {
+    const now = Timestamp.now();
     const docRef = await addDoc(collection(db, CASH_COLLECTION), {
-      tipo: 'egreso',
-      monto,
-      motivo,
-      createdAt: new Date(),
+      type: 'expense',
+      amount: monto,
+      description: motivo,
+      timestamp: now,
+      createdAt: now,
     });
+    console.log(`✓ Egreso guardado en Firebase con ID: ${docRef.id}`);
     return docRef.id;
   } catch (error) {
     console.error('Error registrando egreso:', error);
@@ -241,24 +256,144 @@ export function onResumenCajaChange(
  */
 export async function deleteMovimientosByDateRange(startDate: Date, endDate: Date): Promise<number> {
   try {
-    const q = query(
+    // Asegurar que las fechas cubren todo el día
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    console.log('Eliminando transacciones entre:', start, 'y', end);
+
+    // Query para nuevo formato (timestamp)
+    const q1 = query(
       collection(db, CASH_COLLECTION),
-      where('createdAt', '>=', Timestamp.fromDate(startDate)),
-      where('createdAt', '<=', Timestamp.fromDate(endDate))
+      where('timestamp', '>=', Timestamp.fromDate(start)),
+      where('timestamp', '<=', Timestamp.fromDate(end))
+    );
+
+    // Query para formato antiguo (createdAt)
+    const q2 = query(
+      collection(db, CASH_COLLECTION),
+      where('createdAt', '>=', Timestamp.fromDate(start)),
+      where('createdAt', '<=', Timestamp.fromDate(end))
     );
     
-    const querySnapshot = await getDocs(q);
+    const [querySnapshot1, querySnapshot2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+    
+    // Combinar y deduplicar por ID
+    const docsToDelete = new Map();
+    querySnapshot1.docs.forEach(doc => docsToDelete.set(doc.id, doc));
+    querySnapshot2.docs.forEach(doc => docsToDelete.set(doc.id, doc));
+    
+    console.log('Documentos encontrados para eliminar:', docsToDelete.size);
+    
     let deletedCount = 0;
     
     // Eliminar cada documento encontrado
+    for (const docSnapshot of docsToDelete.values()) {
+      console.log('Eliminando documento:', docSnapshot.id);
+      await deleteDoc(doc(db, CASH_COLLECTION, docSnapshot.id));
+      deletedCount++;
+    }
+    
+    console.log(`Total de ${deletedCount} transacciones eliminadas`);
+    return deletedCount;
+  } catch (error) {
+    console.error('Error eliminando movimientos por rango de fechas:', error);
+    throw error;
+  }
+}
+
+/**
+ * Elimina transacciones asociadas a una orden específica
+ */
+export async function deleteMovimientosByOrderId(orderId: string): Promise<number> {
+  try {
+    console.log('Eliminando transacciones para orden:', orderId);
+
+    // Query 1: buscar por ordenId directo (nuevo formato)
+    const q1 = query(
+      collection(db, CASH_COLLECTION),
+      where('ordenId', '==', orderId)
+    );
+    
+    // Query 2: buscar por motivo antiguo (formato antiguo)
+    const q2 = query(
+      collection(db, CASH_COLLECTION),
+      where('motivo', '>=', `Orden #${orderId}`),
+      where('motivo', '<', `Orden #${orderId}~`)
+    );
+
+    // Query 3: buscar por description nuevo formato
+    const q3 = query(
+      collection(db, CASH_COLLECTION),
+      where('description', '>=', `Orden #${orderId}`),
+      where('description', '<', `Orden #${orderId}~`)
+    );
+    
+    const [querySnapshot1, querySnapshot2, querySnapshot3] = await Promise.all([
+      getDocs(q1),
+      getDocs(q2),
+      getDocs(q3),
+    ]);
+    
+    // Combinar y deduplicar por ID
+    const docsToDelete = new Map();
+    querySnapshot1.docs.forEach(doc => {
+      console.log(`✓ Encontrado por ordenId: ${doc.id}`, doc.data());
+      docsToDelete.set(doc.id, doc);
+    });
+    querySnapshot2.docs.forEach(doc => {
+      console.log(`✓ Encontrado por motivo: ${doc.id}`, doc.data());
+      docsToDelete.set(doc.id, doc);
+    });
+    querySnapshot3.docs.forEach(doc => {
+      console.log(`✓ Encontrado por description: ${doc.id}`, doc.data());
+      docsToDelete.set(doc.id, doc);
+    });
+    
+    console.log('Documentos encontrados para eliminar:', docsToDelete.size);
+    
+    let deletedCount = 0;
+    
+    // Eliminar cada documento encontrado
+    for (const docSnapshot of docsToDelete.values()) {
+      console.log('Eliminando documento:', docSnapshot.id, docSnapshot.data());
+      await deleteDoc(doc(db, CASH_COLLECTION, docSnapshot.id));
+      deletedCount++;
+    }
+    
+    console.log(`Total de ${deletedCount} transacciones eliminadas para orden ${orderId}`);
+    return deletedCount;
+  } catch (error) {
+    console.error('Error eliminando movimientos por orden:', error);
+    throw error;
+  }
+}
+
+/**
+ * Elimina TODAS las transacciones de caja (para limpiar datos de prueba)
+ */
+export async function deleteAllCashTransactions(): Promise<number> {
+  try {
+    console.log('⚠️ Eliminando TODAS las transacciones de caja...');
+    
+    const q = query(collection(db, CASH_COLLECTION));
+    const querySnapshot = await getDocs(q);
+    
+    console.log(`Encontradas ${querySnapshot.docs.length} transacciones para eliminar`);
+    
+    let deletedCount = 0;
     for (const docSnapshot of querySnapshot.docs) {
       await deleteDoc(doc(db, CASH_COLLECTION, docSnapshot.id));
       deletedCount++;
     }
     
+    console.log(`✓ ${deletedCount} transacciones eliminadas`);
     return deletedCount;
   } catch (error) {
-    console.error('Error eliminando movimientos por rango de fechas:', error);
+    console.error('Error eliminando todas las transacciones:', error);
     throw error;
   }
 }

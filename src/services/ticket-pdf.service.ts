@@ -141,7 +141,23 @@ export async function generarTicketPDF(order: Order): Promise<jsPDF> {
   pdf.setFont(undefined, 'bold');
   pdf.text('TOTAL', MARGIN, currentY);
   pdf.text(`$${order.total.toFixed(2)}`, TICKET_WIDTH - MARGIN, currentY, { align: 'right' });
-  currentY += 5;
+  currentY += 4;
+
+  // PAGO Y CAMBIO (solo si aplica - dine-in con efectivo)
+  if (order.amountReceived !== undefined && order.amountReceived > 0) {
+    pdf.setFontSize(fontSize - 1);
+    pdf.setFont(undefined, 'normal');
+    pdf.text(`Recibido: $${order.amountReceived.toFixed(2)}`, MARGIN, currentY);
+    currentY += 3;
+    
+    if (order.change !== undefined) {
+      pdf.setFont(undefined, 'bold');
+      pdf.text(`Cambio: $${order.change.toFixed(2)}`, MARGIN, currentY);
+      currentY += 4;
+    }
+  }
+
+  addSeparator();
 
   // MÉTODO DE PAGO
   const metodos: Record<string, string> = { 
@@ -195,5 +211,126 @@ export async function abrirParaImprimirPDF(order: Order) {
   } catch (error) {
     console.error('ERROR en abrirParaImprimirPDF:', error);
     console.error('Stack:', (error as Error).stack);
+  }
+}
+
+/**
+ * Genera ticket de egreso/gasto
+ */
+export async function generarTicketEgresoPDF(monto: number, descripcion: string, timestamp: Date = new Date()): Promise<jsPDF> {
+  const pdf = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: [TICKET_WIDTH, TICKET_HEIGHT],
+  });
+
+  let currentY = MARGIN;
+  const fontSize = 7;
+
+  // Función helper para línea separadora
+  const addSeparator = () => {
+    currentY += 1;
+    pdf.setDrawColor(100);
+    pdf.line(MARGIN, currentY, TICKET_WIDTH - MARGIN, currentY);
+    currentY += 2;
+  };
+
+  // LOGO
+  try {
+    const logoBase64 = await imagenABase64(logoImage);
+    const logoWidth = 50;
+    const logoHeight = 28;
+    const logoX = (TICKET_WIDTH - logoWidth) / 2;
+    pdf.addImage(logoBase64, 'JPEG', logoX, currentY, logoWidth, logoHeight);
+    currentY += logoHeight + 4;
+  } catch (error) {
+    console.warn('No se pudo cargar el logo:', error);
+  }
+
+  // ENCABEZADO
+  pdf.setFontSize(fontSize + 2);
+  pdf.setFont(undefined, 'bold');
+  pdf.text('DUMPLINGS', TICKET_WIDTH / 2, currentY, { align: 'center' });
+  currentY += 5;
+  
+  pdf.setFontSize(fontSize);
+  pdf.setFont(undefined, 'normal');
+  pdf.text('EGRESO / GASTO', TICKET_WIDTH / 2, currentY, { align: 'center' });
+  currentY += 4;
+  addSeparator();
+
+  // FECHA Y HORA
+  const fecha = timestamp.toLocaleDateString('es-MX', { 
+    day: '2-digit', 
+    month: '2-digit', 
+    year: '2-digit' 
+  });
+  const hora = timestamp.toLocaleTimeString('es-MX', { 
+    hour: '2-digit', 
+    minute: '2-digit' 
+  });
+
+  pdf.setFontSize(fontSize);
+  pdf.text(`${fecha} ${hora}`, TICKET_WIDTH / 2, currentY, { align: 'center' });
+  currentY += 4;
+  addSeparator();
+
+  // DESCRIPCIÓN DEL GASTO
+  pdf.setFont(undefined, 'bold');
+  pdf.setFontSize(8);
+  const lineasDescripcion = pdf.splitTextToSize(descripcion, CONTENT_WIDTH);
+  lineasDescripcion.forEach((line: string) => {
+    pdf.text(line, MARGIN, currentY);
+    currentY += 3;
+  });
+  currentY += 2;
+
+  addSeparator();
+
+  // MONTO
+  pdf.setFontSize(fontSize + 4);
+  pdf.setFont(undefined, 'bold');
+  pdf.setTextColor(220, 53, 69); // Rojo para egreso
+  pdf.text(`-$${monto.toFixed(2)}`, TICKET_WIDTH / 2, currentY, { align: 'center' });
+  currentY += 8;
+  pdf.setTextColor(0, 0, 0);
+
+  addSeparator();
+
+  // PIE
+  pdf.setFontSize(fontSize);
+  pdf.setFont(undefined, 'normal');
+  pdf.text('Comprobante de Egreso', TICKET_WIDTH / 2, currentY, { align: 'center' });
+
+  return pdf;
+}
+
+/**
+ * Abre ticket de egreso para imprimir
+ */
+export async function abrirParaImprimirEgresoPDF(monto: number, descripcion: string) {
+  try {
+    console.log('🧾 Generando ticket de egreso...');
+    
+    const pdf = await generarTicketEgresoPDF(monto, descripcion);
+    console.log('✓ PDF de egreso generado');
+    
+    const pdfBlob = pdf.output('blob');
+    const url = URL.createObjectURL(pdfBlob);
+    
+    console.log('🖨️ Abriendo para imprimir...');
+    const ventana = window.open(url, '_blank');
+    
+    if (ventana) {
+      setTimeout(() => {
+        ventana.print();
+        console.log('✓ Impresión iniciada - La caja debería abrir');
+      }, 800);
+    } else {
+      console.error('ERROR: No se pudo abrir ventana de impresión');
+      alert('No se pudo abrir la ventana de impresión.');
+    }
+  } catch (error) {
+    console.error('Error en abrirParaImprimirEgresoPDF:', error);
   }
 }

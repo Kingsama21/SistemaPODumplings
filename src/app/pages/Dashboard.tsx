@@ -15,26 +15,35 @@ export default function Dashboard() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    const todayOrders = orders.filter(o => new Date(o.timestamp).getTime() >= today.getTime());
+    const todayOrders = orders.filter(o => {
+      const orderDate = new Date(o.timestamp ?? o.createdAt ?? new Date());
+      return orderDate.getTime() >= today.getTime();
+    });
     const completedOrders = todayOrders.filter(o => o.status === 'completed');
     const pendingOrders = todayOrders.filter(o => o.status === 'pending' || o.status === 'preparing');
     
-    const totalSales = completedOrders.reduce((sum, o) => sum + o.total, 0);
+    // Calcular total de TODAS las órdenes del día (no solo completadas)
+    const totalSales = todayOrders.reduce((sum, o) => sum + (o.total || 0), 0);
     const totalOrders = todayOrders.length;
     
     // Productos más vendidos
     const productSales = new Map<string, { name: string; quantity: number; revenue: number }>();
     todayOrders.forEach(order => {
-      order.items.forEach(item => {
-        const existing = productSales.get(item.product.id) || { 
-          name: item.product.name, 
-          quantity: 0, 
-          revenue: 0 
-        };
-        existing.quantity += item.quantity;
-        existing.revenue += item.product.price * item.quantity;
-        productSales.set(item.product.id, existing);
-      });
+      if (order.items && order.items.length > 0) {
+        order.items.forEach(item => {
+          const product = item.product || (typeof item === 'object' && 'id' in item ? item : null);
+          if (product && product.id && product.name) {
+            const existing = productSales.get(product.id) || { 
+              name: product.name, 
+              quantity: 0, 
+              revenue: 0 
+            };
+            existing.quantity += item.quantity || 0;
+            existing.revenue += (product.price || 0) * (item.quantity || 1);
+            productSales.set(product.id, existing);
+          }
+        });
+      }
     });
     
     const topProducts = Array.from(productSales.values())
@@ -62,7 +71,7 @@ export default function Dashboard() {
       topProducts,
       hourlyData: hourlyData.filter(h => h.orders > 0 || (parseInt(h.hour) >= 10 && parseInt(h.hour) <= 22)),
       lowStockIngredients,
-      averageTicket: completedOrders.length > 0 ? totalSales / completedOrders.length : 0,
+      averageTicket: totalOrders > 0 ? totalSales / totalOrders : 0,
     };
   }, [orders, products, getLowStockIngredients]);
 

@@ -135,16 +135,30 @@ export default function Orders() {
 
                   {/* Items */}
                   <div className="border-t border-border pt-4 mb-4 space-y-2">
-                    {order.items.map((item, idx) => (
-                      <div key={idx} className="flex justify-between text-sm">
-                        <span>
-                          {item.quantity}x {item.product.name}
-                        </span>
-                        <span className="text-muted-foreground">
-                          ${item.product.price * item.quantity}
-                        </span>
-                      </div>
-                    ))}
+                    {order.items && order.items.length > 0 ? (
+                      order.items.map((item, idx) => {
+                        const product = item.product || (typeof item === 'object' && 'name' in item ? item : null);
+                        if (!product || !product.name) {
+                          return (
+                            <div key={idx} className="flex justify-between text-sm text-muted-foreground">
+                              <span>Item sin información</span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={idx} className="flex justify-between text-sm">
+                            <span>
+                              {item.quantity}x {product.name}
+                            </span>
+                            <span className="text-muted-foreground">
+                              ${(product.price || 0) * (item.quantity || 1)}
+                            </span>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="text-sm text-muted-foreground">Sin items</div>
+                    )}
                   </div>
 
                   {/* Footer */}

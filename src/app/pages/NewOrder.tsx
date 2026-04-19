@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useApp, Product, OrderItem, Order } from '../context/AppContext';
-import { ArrowLeft, Plus, Minus, ShoppingCart, Send, Store, Truck, CreditCard, DollarSign, Landmark } from 'lucide-react';
+import { ArrowLeft, Plus, Minus, ShoppingCart, Send, Store, Truck, CreditCard, DollarSign, Landmark, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { abrirParaImprimirPDF } from '../../services/ticket-pdf.service';
 
@@ -19,6 +19,10 @@ export default function NewOrder() {
     phone: '',
     address: '',
   });
+  // Estados para el diálogo de pago
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [amountReceived, setAmountReceived] = useState('');
+  const [change, setChange] = useState(0);
 
   const filteredProducts = selectedCategory === 'all'
     ? products
@@ -66,8 +70,54 @@ export default function NewOrder() {
       }
     }
 
+    // Si es dine-in con efectivo, mostrar diálogo de pago
+    if (orderType === 'local' && paymentMethod === 'cash') {
+      setShowPaymentDialog(true);
+      setAmountReceived('');
+      setChange(0);
+      return;
+    }
+
+    // Para delivery o tarjeta/transferencia, proceder sin diálogo
     try {
-      console.log('handleSendToKitchen: Iniciando...');
+      await createAndPrintOrder(undefined, undefined);
+    } catch (error) {
+      toast.error('Error al crear la orden');
+      console.error('ERROR en handleSendToKitchen:', error);
+    }
+  };
+
+  const handleConfirmPayment = async () => {
+    const received = parseFloat(amountReceived);
+    const total = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+
+    if (isNaN(received) || received === 0) {
+      toast.error('Ingresa un monto válido');
+      return;
+    }
+
+    if (received < total) {
+      toast.error(`Monto insuficiente. Falta ${(total - received).toFixed(2)} pesos`);
+      return;
+    }
+
+    const calculatedChange = received - total;
+    setChange(calculatedChange);
+
+    try {
+      await createAndPrintOrder(received, calculatedChange);
+      setShowPaymentDialog(false);
+    } catch (error) {
+      toast.error('Error al crear la orden');
+      console.error('ERROR en handleConfirmPayment:', error);
+    }
+  };
+
+  const createAndPrintOrder = async (received?: number, calculatedChange?: number) => {
+    try {
+      console.log('createAndPrintOrder: Iniciando...');
+      
+      const total = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
       
       // Crear la orden y obtener su ID
       const ordenId = await createOrder(
@@ -75,22 +125,26 @@ export default function NewOrder() {
         orderType,
         paymentMethod,
         orderType === 'local' ? tableNumber || undefined : undefined,
-        orderType === 'delivery' ? deliveryInfo : undefined
+        orderType === 'delivery' ? deliveryInfo : undefined,
+        received,
+        calculatedChange
       );
 
-      console.log('handleSendToKitchen: Orden creada con ID:', ordenId);
+      console.log('createAndPrintOrder: Orden creada con ID:', ordenId);
 
       // Crear objeto de la orden para generar ticket
       const orderObject: Order = {
         id: ordenId,
         items: cart,
-        total: cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0),
+        total: total,
         status: 'pending',
         timestamp: new Date(),
         orderType,
         paymentMethod,
         tableNumber: orderType === 'local' ? tableNumber : undefined,
         deliveryInfo: orderType === 'delivery' ? deliveryInfo : undefined,
+        amountReceived: received,
+        change: calculatedChange,
       };
 
       // Guardar la orden en state
@@ -100,15 +154,17 @@ export default function NewOrder() {
       setCart([]);
       setTableNumber('');
       setDeliveryInfo({ customerName: '', phone: '', address: '' });
+      setAmountReceived('');
+      setChange(0);
 
       // IMPRIMIR TICKET INMEDIATAMENTE
-      console.log('handleSendToKitchen: Llamando a abrirParaImprimirPDF...');
+      console.log('createAndPrintOrder: Llamando a abrirParaImprimirPDF...');
       await abrirParaImprimirPDF(orderObject);
-      console.log('handleSendToKitchen: Completado');
+      console.log('createAndPrintOrder: Completado');
       
     } catch (error) {
-      toast.error('Error al crear la orden');
-      console.error('ERROR en handleSendToKitchen:', error);
+      console.error('ERROR en createAndPrintOrder:', error);
+      throw error;
     }
   };
 
@@ -390,6 +446,87 @@ export default function NewOrder() {
           </div>
         </div>
       </div>
+
+      {/* Payment Dialog for Dine-in */}
+      {showPaymentDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card border border-border rounded-lg p-8 w-96 shadow-lg">
+            <div className="flex items-center justify-between mb-6">
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', fontWeight: 600 }}>
+                Pago en Local
+              </h2>
+              <button
+                onClick={() => setShowPaymentDialog(false)}
+                className="p-1 hover:bg-secondary rounded transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Total */}
+              <div className="bg-secondary p-4 rounded">
+                <p className="text-muted-foreground text-sm mb-2">Total a Pagar:</p>
+                <p className="text-3xl font-bold text-accent">
+                  ${(cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0)).toFixed(2)}
+                </p>
+              </div>
+
+              {/* Amount Input */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Monto Recibido:</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={amountReceived}
+                  onChange={(e) => {
+                    setAmountReceived(e.target.value);
+                    const received = parseFloat(e.target.value);
+                    const total = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+                    if (!isNaN(received)) {
+                      setChange(Math.max(0, received - total));
+                    }
+                  }}
+                  autoFocus
+                  className="w-full px-4 py-3 border border-border rounded text-lg font-bold bg-input text-right"
+                  style={{ fontFamily: 'var(--font-sans)' }}
+                />
+              </div>
+
+              {/* Change Display */}
+              {amountReceived && (
+                <div className={`p-4 rounded ${change >= 0 ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'}`}>
+                  <p className="text-muted-foreground text-sm mb-2">Cambio:</p>
+                  <p className={`text-2xl font-bold ${change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    ${change.toFixed(2)}
+                  </p>
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowPaymentDialog(false)}
+                  className="flex-1 px-4 py-3 border border-border rounded hover:bg-secondary transition-colors"
+                  style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleConfirmPayment}
+                  disabled={!amountReceived || change < 0}
+                  className="flex-1 px-4 py-3 bg-accent text-accent-foreground rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}
+                >
+                  Confirmar Pago
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

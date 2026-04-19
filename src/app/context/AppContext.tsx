@@ -3,6 +3,8 @@ import * as productosService from '../../services/productos.service';
 import * as categoriasService from '../../services/categorias.service';
 import * as ordenesService from '../../services/ordenes.service';
 import * as cajaService from '../../services/caja.service';
+import { abrirCajon } from '../../services/cajon.service';
+import { abrirParaImprimirEgresoPDF } from '../../services/ticket-pdf.service';
 
 export interface Product {
   id: string;
@@ -65,6 +67,8 @@ export interface Order {
   tableNumber?: string;
   orderType: 'local' | 'delivery';
   paymentMethod: 'cash' | 'card' | 'transfer';
+  amountReceived?: number; // Monto recibido del cliente (para dine-in efectivo)
+  change?: number; // Cambio del cliente (para dine-in efectivo)
   deliveryInfo?: {
     customerName: string;
     phone: string;
@@ -101,11 +105,16 @@ interface AppContextType {
     orderType: 'local' | 'delivery',
     paymentMethod: 'cash' | 'card' | 'transfer',
     tableNumber?: string,
-    deliveryInfo?: { customerName: string; phone: string; address: string }
+    deliveryInfo?: { customerName: string; phone: string; address: string },
+    amountReceived?: number,
+    change?: number
   ) => Promise<string>;
   updateOrderStatus: (id: string, status: Order['status']) => void;
   updateOrderPaymentMethod: (id: string, paymentMethod: 'cash' | 'card' | 'transfer') => void;
   deleteCashTransactionsByDateRange: (startDate: Date, endDate: Date) => void;
+  deleteCashTransactionsByOrderId: (orderId: string) => Promise<number>;
+  deleteAllOrders: () => Promise<number>;
+  deleteAllCashTransactions: () => Promise<number>;
   addExpense: (amount: number, description: string) => void;
   // Ingredientes/Insumos (con inventario)
   addIngredient: (ingredient: Omit<Ingredient, 'id'>) => void;
@@ -242,6 +251,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       (data) => {
         // Mapeo de estados de Firebase (español) a React (inglés)
         const statusMap: Record<string, Order['status']> = {
+          'pending': 'pending',
+          'preparing': 'preparing',
+          'ready': 'ready',
+          'completed': 'completed',
+          'cancelled': 'cancelled',
           'pendiente': 'pending',
           'en_preparacion': 'preparing',
           'listo': 'ready',
@@ -251,9 +265,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         const ordenes = data
           .filter(o => o.id && o.id.trim()) // Filtrar órdenes sin ID
-          .map(o => ({
-            id: o.id,
-            items: o.productos.map(p => ({
+          .map((o: any) => {
+            // Soportar ambos formatos (nuevo y antiguo)
+            const status = statusMap[o.status || o.estado] || 'pending';
+            const items = o.items || (o.productos?.map((p: any) => ({
               product: {
                 id: p.id,
                 name: p.nombre,
@@ -261,15 +276,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 category: '',
               },
               quantity: p.cantidad,
-            })),
-            total: o.total,
-            status: statusMap[o.estado] || 'pending',
-            timestamp: o.createdAt,
-            tableNumber: o.numeroMesa,
-            orderType: o.tipo,
-            paymentMethod: o.metodoPago || 'cash',
-            deliveryInfo: o.cliente,
-          } as Order));
+            })));
+            const paymentMethod = (o.paymentMethod || o.metodoPago || 'cash') as 'cash' | 'card' | 'transfer';
+            const timestamp = o.timestamp || o.createdAt;
+
+            return {
+              id: o.id,
+              items: items || [],
+              total: o.total,
+              status,
+              timestamp,
+              createdAt: timestamp, // Mapear también como createdAt para compatibilidad
+              tableNumber: o.tableNumber || o.numeroMesa,
+              orderType: o.type || o.tipo,
+              paymentMethod,
+              deliveryInfo: o.deliveryInfo || o.cliente,
+            } as Order;
+          });
         setOrders(ordenes);
       },
       (error) => console.error('Error en órdenes:', error)
@@ -278,28 +301,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Escuchar movimientos de caja
     const unsubCaja = cajaService.onMovimientosChange(
       (data) => {
-        // Mapeo de tipos de caja de Firebase (español) a React (inglés)
-        const typeMap: Record<string, CashTransaction['type']> = {
-          'ingreso': 'income',
-          'egreso': 'expense',
-        };
-
         const movimientos = data
           .filter(m => m.id && m.id.trim()) // Filtrar movimientos sin ID
-          .map(m => {
-            // Extraer método de pago de la descripción
-            let paymentMethod: 'cash' | 'card' | 'transfer' | undefined = undefined;
-            if (m.motivo.includes('Efectivo')) paymentMethod = 'cash';
-            else if (m.motivo.includes('Tarjeta')) paymentMethod = 'card';
-            else if (m.motivo.includes('Transferencia')) paymentMethod = 'transfer';
+          .map((m: any) => {
+            // Soportar ambos formatos (antiguo y nuevo)
+            const type = m.type || (m.tipo === 'ingreso' ? 'income' : 'expense');
+            const amount = m.amount ?? m.monto ?? 0;
+            const description = m.description ?? m.motivo ?? '';
+            const timestamp = m.timestamp ?? m.createdAt ?? new Date();
+            const orderId = m.ordenId;
+
+            // Extraer método de pago de la descripción o del campo directo
+            let paymentMethod: 'cash' | 'card' | 'transfer' | undefined = m.paymentMethod;
+            if (!paymentMethod && description) {
+              if (description.includes('Efectivo')) paymentMethod = 'cash';
+              else if (description.includes('Tarjeta')) paymentMethod = 'card';
+              else if (description.includes('Transferencia')) paymentMethod = 'transfer';
+            }
 
             return {
               id: m.id,
-              type: typeMap[m.tipo] || 'expense',
-              amount: m.monto || 0,
-              description: m.motivo,
-              timestamp: m.createdAt,
-              orderId: m.ordenId,
+              type: type as 'income' | 'expense',
+              amount,
+              description,
+              timestamp,
+              orderId,
               paymentMethod,
             } as CashTransaction;
           });
@@ -400,7 +426,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     orderType: 'local' | 'delivery',
     paymentMethod: 'cash' | 'card' | 'transfer',
     tableNumber?: string,
-    deliveryInfo?: { customerName: string; phone: string; address: string }
+    deliveryInfo?: { customerName: string; phone: string; address: string },
+    amountReceived?: number,
+    change?: number
   ): Promise<string> => {
     try {
       const total = items.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
@@ -422,7 +450,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           nombre: deliveryInfo.customerName,
           telefono: deliveryInfo.phone,
           direccion: deliveryInfo.address,
-        }
+        },
+        paymentMethod,
+        amountReceived,
+        change
       );
 
       // Registrar ingreso automáticamente
@@ -469,17 +500,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const deleteCashTransactionsByDateRange = (startDate: Date, endDate: Date) => {
+  const deleteCashTransactionsByDateRange = async (startDate: Date, endDate: Date) => {
     try {
-      import('../../services/caja.service').then(cajaService => {
-        cajaService.deleteMovimientosByDateRange(startDate, endDate).then((count) => {
-          console.log(`${count} transacciones eliminadas`);
-        }).catch((error) => {
-          console.error('Error eliminando transacciones:', error);
-        });
-      });
+      const count = await cajaService.deleteMovimientosByDateRange(startDate, endDate);
+      console.log(`${count} transacciones eliminadas de Firebase`);
     } catch (error) {
       console.error('Error eliminando transacciones de caja:', error);
+      throw error;
+    }
+  };
+
+  const deleteCashTransactionsByOrderId = async (orderId: string): Promise<number> => {
+    try {
+      const count = await cajaService.deleteMovimientosByOrderId(orderId);
+      console.log(`${count} transacciones eliminadas para orden ${orderId}`);
+      return count;
+    } catch (error) {
+      console.error('Error eliminando transacciones por orden:', error);
+      throw error;
+    }
+  };
+
+  const deleteAllOrders = async (): Promise<number> => {
+    try {
+      const count = await ordenesService.deleteAllOrders();
+      console.log(`✓ ${count} órdenes eliminadas`);
+      return count;
+    } catch (error) {
+      console.error('Error eliminando todas las órdenes:', error);
+      throw error;
+    }
+  };
+
+  const deleteAllCashTransactions = async (): Promise<number> => {
+    try {
+      const count = await cajaService.deleteAllCashTransactions();
+      console.log(`✓ ${count} transacciones de caja eliminadas`);
+      return count;
+    } catch (error) {
+      console.error('Error eliminando todas las transacciones:', error);
       throw error;
     }
   };
@@ -491,6 +550,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addExpense = async (amount: number, description: string) => {
     try {
       await cajaService.registrarEgreso(amount, description);
+      // Abrir ticket de egreso para imprimir (esto abrirá la caja)
+      setTimeout(() => {
+        abrirParaImprimirEgresoPDF(amount, description);
+      }, 500);
     } catch (error) {
       console.error('Error registrando egreso:', error);
       throw error;
@@ -699,6 +762,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateOrderStatus,
         updateOrderPaymentMethod,
         deleteCashTransactionsByDateRange,
+        deleteCashTransactionsByOrderId,
+        deleteAllOrders,
+        deleteAllCashTransactions,
         addExpense,
         // Ingredientes/Insumos
         addIngredient,

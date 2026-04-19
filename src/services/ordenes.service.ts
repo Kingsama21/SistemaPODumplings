@@ -10,6 +10,7 @@ import {
   onSnapshot,
   Unsubscribe,
   Timestamp,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { Orden, ProductoEnOrden, ClienteDelivery } from './types';
@@ -54,6 +55,7 @@ export function onOrdenesChange(
         const ordenes = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
+          timestamp: doc.data().timestamp?.toDate() || new Date(),
           createdAt: doc.data().createdAt?.toDate() || new Date(),
           updatedAt: doc.data().updatedAt?.toDate() || new Date(),
         } as Orden));
@@ -161,27 +163,54 @@ export async function crearOrden(
   productos: ProductoEnOrden[],
   total: number,
   numeroMesa?: string,
-  cliente?: ClienteDelivery
+  cliente?: ClienteDelivery,
+  paymentMethod?: 'cash' | 'card' | 'transfer',
+  amountReceived?: number,
+  change?: number
 ): Promise<string> {
   try {
+    const now = Timestamp.now();
     const orderData: any = {
-      tipo,
-      productos,
+      type: tipo,
+      items: productos.map(p => ({
+        id: p.id,
+        name: p.nombre,
+        price: p.precio,
+        quantity: p.cantidad,
+      })),
       total,
-      estado: 'pendiente',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      status: 'pending',
+      paymentMethod: paymentMethod || 'cash',
+      timestamp: now,
+      createdAt: now,
+      updatedAt: now,
     };
+
+    // Mantener campos antiguos para compatibilidad
+    orderData.tipo = tipo;
+    orderData.productos = productos;
+    orderData.estado = 'pendiente';
+    orderData.metodoPago = paymentMethod || 'cash';
 
     // Solo agregar campos si tienen valor (Firestore rechaza undefined)
     if (tipo === 'local' && numeroMesa) {
       orderData.numeroMesa = numeroMesa;
+      orderData.tableNumber = numeroMesa;
     }
     if (tipo === 'delivery' && cliente) {
       orderData.cliente = cliente;
+      orderData.deliveryInfo = cliente;
+    }
+    // Guardar pago y cambio si aplican (para dine-in)
+    if (amountReceived !== undefined && amountReceived > 0) {
+      orderData.amountReceived = amountReceived;
+    }
+    if (change !== undefined && change >= 0) {
+      orderData.change = change;
     }
 
     const docRef = await addDoc(collection(db, ORDERS_COLLECTION), orderData);
+    console.log(`✓ Orden creada con ID: ${docRef.id}, Método de pago: ${paymentMethod || 'cash'}`);
     return docRef.id;
   } catch (error) {
     console.error('Error creando orden:', error);
@@ -194,14 +223,33 @@ export async function crearOrden(
  */
 export async function actualizarEstadoOrden(
   ordenId: string,
-  nuevoEstado: 'pendiente' | 'en_preparacion' | 'listo' | 'completada'
+  nuevoEstado: 'pending' | 'preparing' | 'ready' | 'completed' | 'cancelled' | 'pendiente' | 'en_preparacion' | 'listo' | 'completada' | 'cancelada'
 ): Promise<void> {
   try {
+    // Mapear estado nuevo a ambos formatos
+    const estadoMap: Record<string, { status: string; estado: string }> = {
+      'pending': { status: 'pending', estado: 'pendiente' },
+      'preparing': { status: 'preparing', estado: 'en_preparacion' },
+      'ready': { status: 'ready', estado: 'listo' },
+      'completed': { status: 'completed', estado: 'completada' },
+      'cancelled': { status: 'cancelled', estado: 'cancelada' },
+      'pendiente': { status: 'pending', estado: 'pendiente' },
+      'en_preparacion': { status: 'preparing', estado: 'en_preparacion' },
+      'listo': { status: 'ready', estado: 'listo' },
+      'completada': { status: 'completed', estado: 'completada' },
+      'cancelada': { status: 'cancelled', estado: 'cancelada' },
+    };
+
+    const mapped = estadoMap[nuevoEstado] || { status: 'pending', estado: 'pendiente' };
+
     const docRef = doc(db, ORDERS_COLLECTION, ordenId);
     await updateDoc(docRef, {
-      estado: nuevoEstado,
+      status: mapped.status,
+      estado: mapped.estado,
       updatedAt: new Date(),
     });
+    
+    console.log(`✓ Estado de orden ${ordenId} actualizado a: ${nuevoEstado}`);
   } catch (error) {
     console.error('Error actualizando estado de orden:', error);
     throw error;
@@ -234,6 +282,32 @@ export async function getOrdenesPorFecha(fecha: Date): Promise<Orden[]> {
     } as Orden));
   } catch (error) {
     console.error('Error obteniendo órdenes por fecha:', error);
+    throw error;
+  }
+}
+
+/**
+ * Elimina TODAS las órdenes (para limpiar datos de prueba)
+ */
+export async function deleteAllOrders(): Promise<number> {
+  try {
+    console.log('⚠️ Eliminando TODAS las órdenes...');
+    
+    const q = query(collection(db, ORDERS_COLLECTION));
+    const querySnapshot = await getDocs(q);
+    
+    console.log(`Encontradas ${querySnapshot.docs.length} órdenes para eliminar`);
+    
+    let deletedCount = 0;
+    for (const docSnapshot of querySnapshot.docs) {
+      await deleteDoc(doc(db, ORDERS_COLLECTION, docSnapshot.id));
+      deletedCount++;
+    }
+    
+    console.log(`✓ ${deletedCount} órdenes eliminadas`);
+    return deletedCount;
+  } catch (error) {
+    console.error('Error eliminando todas las órdenes:', error);
     throw error;
   }
 }

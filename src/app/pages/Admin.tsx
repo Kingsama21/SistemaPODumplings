@@ -33,9 +33,11 @@ export default function Admin() {
     updatePromotion,
     deletePromotion,
     promotions,
+    deleteAllOrders,
+    deleteAllCashTransactions,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'products' | 'ingredients' | 'discounts' | 'promotions' | 'categories'>('products');
+  const [activeTab, setActiveTab] = useState<'products' | 'ingredients' | 'discounts' | 'promotions' | 'categories' | 'cleanup'>('products');
 
   // ============ PRODUCTOS ============
   const [showProductForm, setShowProductForm] = useState(false);
@@ -414,6 +416,30 @@ export default function Admin() {
     }
   };
 
+  const handleCleanupAllData = async () => {
+    if (!confirm('⚠️ ¿Estás seguro? Esto eliminará TODOS los órdenes y transacciones de caja. Esta acción NO se puede deshacer.')) {
+      return;
+    }
+    
+    if (!confirm('Confirma de nuevo: ¿Deseas ELIMINAR TODO?')) {
+      return;
+    }
+
+    try {
+      console.log('Iniciando limpieza de datos...');
+      const ordersDeleted = await deleteAllOrders();
+      console.log(`✓ ${ordersDeleted} órdenes eliminadas`);
+      
+      const transactionsDeleted = await deleteAllCashTransactions();
+      console.log(`✓ ${transactionsDeleted} transacciones eliminadas`);
+      
+      toast.success(`✓ Limpieza completada: ${ordersDeleted} órdenes y ${transactionsDeleted} transacciones eliminadas`);
+    } catch (error) {
+      console.error('Error durante la limpieza:', error);
+      toast.error('Error al limpiar datos');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -440,7 +466,8 @@ export default function Admin() {
             { id: 'ingredients', label: 'Ingredientes', icon: AlertCircle },
             { id: 'discounts', label: 'Descuentos', icon: Percent },
             { id: 'promotions', label: 'Promociones', icon: Ticket },
-            { id: 'categories', label: 'Categorías', icon: Tag }
+            { id: 'categories', label: 'Categorías', icon: Tag },
+            { id: 'cleanup', label: 'Limpiar Datos', icon: Trash2 }
           ].map((tab) => (
             <button
               key={tab.id}
@@ -741,6 +768,29 @@ export default function Admin() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* LIMPIAR DATOS */}
+        {activeTab === 'cleanup' && (
+          <div>
+            <div className="bg-destructive/10 border border-destructive rounded-lg p-6">
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem', color: 'var(--destructive)' }}>
+                ⚠️ Limpiar Datos
+              </h2>
+              <p className="text-sm text-muted-foreground mb-6">
+                Esta acción eliminará TODOS los órdenes y transacciones de caja. Esta acción no se puede deshacer.
+              </p>
+              
+              <div className="space-y-4">
+                <button
+                  onClick={() => handleCleanupAllData()}
+                  className="w-full px-6 py-3 bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-colors font-semibold"
+                >
+                  🗑️ Eliminar TODO (Órdenes + Caja)
+                </button>
+              </div>
             </div>
           </div>
         )}
