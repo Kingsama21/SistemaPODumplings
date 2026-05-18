@@ -1,153 +1,309 @@
-# 🔥 Configuración de Firebase completada para Dumplings del Dragón
+# 🎉 Estado de Implementación - iSistema Comanda
 
-## ✅ Lo que se ha hecho
-
-### 1. **Instalación de Firebase**
-- ✅ Firebase SDK instalado (`12.12.0`)
-- ✅ Firestore disponible
-- ✅ Configuración lista
-
-### 2. **Estructura de Servicios Creada**
-
-#### `src/services/`
-```
-├── firebase.ts           ← Configuración de Firebase
-├── types.ts              ← Tipos TypeScript para Firestore
-├── productos.service.ts  ← CRUD de productos
-├── categorias.service.ts ← CRUD de categorías
-├── ordenes.service.ts    ← Gestión de órdenes
-├── caja.service.ts       ← Control de caja
-└── index.ts             ← Exporta todo
-```
-
-### 3. **Funcionalidades por Servicio**
-
-#### `productosService`
-- `getProductos()` - Obtener todos (una vez)
-- `onProductosChange()` - Escuchar en tiempo real
-- `addProducto()` - Agregar
-- `updateProducto()` - Actualizar
-- `deleteProducto()` - Eliminar
-- `getProductosPorCategoria()` - Filtrar
-
-#### `categoriasService`
-- `getCategorias()` - Obtener todas
-- `onCategoriasChange()` - Escuchar cambios
-- `addCategoria()` - Agregar
-- `deleteCategoria()` - Eliminar
-
-#### `ordenesService`
-- `getOrdenes()` - Todas
-- `getOrdenesActivas()` - Solo activas
-- `onOrdenesActivasChange()` - Tiempo real (cocina)
-- `getOrdenesCompletadas()` - Historial
-- `crearOrden()` - Nueva orden
-- `actualizarEstadoOrden()` - Cambiar estado
-- `getOrdenesPorFecha()` - Filtrar por fecha
-
-#### `cajaService`
-- `getMovimientos()` - Obtener movimientos
-- `onMovimientosChange()` - Tiempo real
-- `registrarIngreso()` - Venta
-- `registrarEgreso()` - Egreso
-- `calcularResumenCaja()` - Totales
-- `onResumenCajaChange()` - Resumen en tiempo real
-
-### 4. **Hooks Personalizados**
-
-`src/hooks/useFirestore.ts` contiene:
-- `useProductos()` - Escucha productos
-- `useCategorias()` - Escucha categorías
-- `useOrdenesActivas()` - Escucha órdenes activas
-- `useOrdenes()` - Obtiene todas las órdenes
-- `useResumenCaja()` - Escucha resumen de caja
-- `useMovimientos()` - Escucha movimientos
-
-### 5. **AppContext Integrado**
-
-El contexto `AppContext.tsx` ya está configurado para:
-- Escuchar cambios en tiempo real de Firebase
-- Mantener compatibilidad con la interfaz existente
-- Sincronizar automáticamente los datos
-- Fallback a localStorage si es necesario
-
-### 6. **Documentación**
-
-- `FIREBASE_SETUP.md` - Guía completa de instalación y uso
-- `.env.example` - Template de variables de entorno
+**Última actualización: Mayo 2026**
 
 ---
 
-## 🚀 PRÓXIMOS PASOS (IMPORTANTES)
+## ✅ FASES COMPLETADAS
 
-### 1. Configurar Firebase
+### FASE 1: Sistema de 9 Mesas Fijas ✅
 
-1. **Crear proyecto** en [Firebase Console](https://console.firebase.google.com/)
-2. **Habilitar Firestore**
-3. **Copiar credenciales**
-4. **Crear archivo `.env`** en la raíz del proyecto:
+**Estado: COMPLETADO**
 
-```env
-VITE_FIREBASE_API_KEY=AIzaSy...
-VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your-project-id
-VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
-VITE_FIREBASE_APP_ID=1:123456789:web:abcdef1234567890
-```
+Implementado en `src/app/pages/Tables.tsx`
 
-### 2. Reiniciar el servidor
+#### Características:
+- ✅ Grid 3x3 con 9 mesas fijas
+- ✅ Visualización de órdenes por mesa
+- ✅ Total en tiempo real por mesa
+- ✅ Acumulación de productos sin pagar
+- ✅ Envío a cocina sin necesidad de pagar
+- ✅ Sistema de estados de ítems:
+  - Pending: Nuevo
+  - En Cocina: Enviado a preparación
+  - Cancelado: Descartado (no se cobra)
+- ✅ Cancelación visual con strikethrough y etiqueta roja
+- ✅ Cálculo correcto de totales (excluyendo cancelados)
 
-```bash
-pnpm dev
-```
+**Código relevante:**
+```typescript
+// Interface para órdenes de mesa
+interface TableOrderItem {
+  id: string;
+  product: Product;
+  quantity: number;
+  timestamp: Date;
+  status: 'pending' | 'sent' | 'cancelled';
+}
 
-### 3. Probar en componentes
-
-Los componentes AHORA AUTOMÁTICAMENTE usarán Firebase:
-
-```tsx
-import { useApp } from '@/app/context/AppContext';
-
-export default function MiComponente() {
-  const { products, categories, orders } = useApp();
-  
-  // Los datos se sincronizan en tiempo real desde Firebase ✅
+// Interface para la mesa
+interface Table {
+  number: number;
+  orders: TableOrderItem[];
+  total: number;
+  createdAt: Date;
 }
 ```
 
 ---
 
-## 📁 Estructura de Datos en Firestore
+### FASE 2: Pagos Flexibles (Efectivo + Tarjeta) ✅
 
-Las colecciones se crean automáticamente:
+**Estado: COMPLETADO**
 
-### `productos`
-```json
-{
-  "nombre": "Dumplings de Cerdo",
-  "precio": 85,
-  "categoria": "Dumplings",
-  "imagen": "https://...",
-  "createdAt": "2024-04-13T...",
-  "updatedAt": "2024-04-13T..."
+Implementado en: Tables.tsx, NewOrder.tsx, Deliveries.tsx
+
+#### Efectivo
+- ✅ Input para "Monto Recibido"
+- ✅ Cálculo automático de cambio
+- ✅ Validación de monto insuficiente
+
+#### Tarjeta
+- ✅ Botón seleccionable
+- ✅ Auto-carga del monto sin input
+- ✅ Mensaje de confirmación "Se cobrará en tarjeta: $XXX"
+- ✅ Campo de propina (opcional) disponible
+
+#### Propina
+- ✅ Campo opcional en ambos métodos
+- ✅ Se registra por separado en caja
+- ✅ Se muestra en ticket
+
+**Correcciones aplicadas:**
+- ✅ Botón "Cobrar" ahora se deshabilita durante procesamiento
+- ✅ Muestra "Procesando..." para prevenir clics múltiples
+- ✅ Evita registros duplicados en caja
+
+---
+
+### FASE 3: Sistema de Entregas Pendientes ✅
+
+**Estado: COMPLETADO**
+
+#### Flujo:
+1. ✅ Usuario crea orden de delivery
+2. ✅ Opción "Enviar sin Pagar" guarda como pendiente
+3. ✅ Nueva página `/entregas` lista entregas pendientes
+4. ✅ Repartidor selecciona entrega
+5. ✅ Paga cuando llega (efectivo/tarjeta)
+6. ✅ Se registra en caja automáticamente
+7. ✅ Se imprime ticket
+8. ✅ Se elimina de pendientes
+
+#### Archivos:
+- ✅ `AppContext.tsx` - Funciones de gestión de entregas pendientes
+- ✅ `pages/NewOrder.tsx` - Diálogo de método de orden
+- ✅ `pages/Deliveries.tsx` - Nueva página para entregas pendientes
+- ✅ `routes.tsx` - Ruta `/entregas` agregada
+- ✅ `pages/Dashboard.tsx` - Botón "Entregas Pendientes" agregado
+
+**Interface:**
+```typescript
+interface PendingDelivery {
+  id: string;
+  items: OrderItem[];
+  total: number;
+  customerName: string;
+  phone: string;
+  address: string;
+  deliveryFee: number;
+  status: 'pending' | 'out_for_delivery' | 'delivered';
+  createdAt: Date;
+  paymentMethod?: 'cash' | 'card';
+  amountReceived?: number;
+  change?: number;
 }
 ```
 
-### `categorias`
+---
+
+## 📋 PÁGINAS IMPLEMENTADAS
+
+| Página | Ruta | Estado | Funcionalidad |
+|--------|------|--------|---------------|
+| Dashboard | `/` | ✅ Completa | Menú principal con 9 botones |
+| Mesas | `/mesas` | ✅ Completa | Sistema de 9 mesas fijas |
+| Delivery | `/delivery` | ✅ Completa | Crear nuevas órdenes de delivery |
+| Entregas | `/entregas` | ✅ Completa | Gestión de entregas pendientes |
+| Cocina | `/cocina` | ✅ Funcional | Vista de órdenes pendientes |
+| Órdenes | `/ordenes` | ✅ Funcional | Historial de órdenes |
+| Tickets | `/tickets` | ✅ Funcional | Gestión de tickets |
+| Caja | `/caja` | ✅ Completa | Control de caja con registro automático |
+| Historial | `/historial` | ✅ Funcional | Historial de movimientos |
+| Admin | `/admin` | ✅ Funcional | Panel administrativo |
+
+---
+
+## 🔧 SERVICIOS FIREBASE
+
+### `productos.service.ts`
+- ✅ `onProductosChange()` - Escucha en tiempo real
+- ✅ `addProducto()` - Agregar
+- ✅ `updateProducto()` - Actualizar
+- ✅ `deleteProducto()` - Eliminar
+
+### `categorias.service.ts`
+- ✅ `onCategoriasChange()` - Escucha en tiempo real
+- ✅ `addCategoria()` - Agregar
+- ✅ `deleteCategoria()` - Eliminar
+
+### `ordenes.service.ts`
+- ✅ `crearOrden()` - Crear orden
+- ✅ `onOrdenesChange()` - Escucha todas las órdenes
+- ✅ `actualizarEstadoOrden()` - Cambiar estado
+- ✅ `getOrdenesPorFecha()` - Filtrar por fecha
+
+### `caja.service.ts`
+- ✅ `registrarIngreso()` - Registrar venta (autom con payTable)
+- ✅ `registrarPropina()` - Registrar propina
+- ✅ `registrarEgreso()` - Registrar gasto
+- ✅ `onMovimientosChange()` - Escucha cambios en tiempo real
+- ✅ Prevención de duplicados: botón deshabilitado durante procesamiento
+
+---
+
+## 🎨 INTERFAZ DE USUARIO
+
+### Diseño
+- ✅ Tailwind CSS 4.1.12
+- ✅ shadcn/ui components
+- ✅ Color primario: #FF661E (naranja)
+- ✅ Tipografías: DM Sans + Noto Serif JP
+- ✅ Responsive design
+
+### Componentes
+- ✅ Diálogos de pago modales
+- ✅ Validación en tiempo real
+- ✅ Toast notifications (Sonner)
+- ✅ Icons (Lucide React)
+- ✅ Estados visuales (pending, sent, cancelled)
+
+---
+
+## 🐛 BUGS CORREGIDOS
+
+### ✅ Pagos Duplicados
+- **Problema**: Sistema registraba el mismo pago 15+ veces
+- **Causa**: Usuario hacía clic múltiples veces en botón "Cobrar"
+- **Solución**: 
+  - Agregué estado `processingPayment`
+  - Botón se deshabilita durante pago
+  - Muestra "Procesando..." para feedback visual
+
+### ✅ Items Cancelados se Cobraban
+- **Problema**: Items marcados como cancelados aún se registraban en ventas
+- **Causa**: No había filtrado por status al calcular total
+- **Solución**:
+  - `sendTableOrderToKitchen()` filtra items no cancelados
+  - `payTable()` calcula total solo con items válidos
+  - `getTableTotal()` excluye cancelados
+  - No hay entrada en Firebase para cancelados
+
+### ✅ Tarjeta no Funcionaba sin Monto
+- **Problema**: Con "Tarjeta" seleccionada, botón no habilitaba
+- **Causa**: Validación requería `amountReceived` incluso para tarjeta
+- **Solución**: Para tarjeta, `received = tableTotal` automáticamente
+
+---
+
+## 📊 DATOS EN FIREBASE
+
+### Colección `ordenes`
 ```json
 {
-  "nombre": "Dumplings",
-  "createdAt": "2024-04-13T..."
+  "id": "orden_123",
+  "type": "local",  // o "delivery"
+  "items": [...],
+  "total": 445.00,
+  "status": "completed",
+  "paymentMethod": "cash",  // o "card"
+  "tableNumber": "Mesa 1",
+  "amountReceived": 500,
+  "change": 55,
+  "timestamp": "2026-05-18T..."
 }
 ```
 
-### `ordenes`
+### Colección `caja`
 ```json
 {
-  "tipo": "delivery",
-  "cliente": {
-    "nombre": "Juan",
+  "id": "mov_456",
+  "type": "income",  // o "tip", "expense"
+  "amount": 445.00,
+  "description": "Mesa #1 (Efectivo)",
+  "paymentMethod": "cash",  // o "card"
+  "ordenId": "orden_123",
+  "timestamp": "2026-05-18T..."
+}
+```
+
+### PendingDeliveries (en memoria - AppContext)
+```typescript
+{
+  id: string;
+  items: OrderItem[];
+  total: number;
+  customerName: string;
+  phone: string;
+  address: string;
+  deliveryFee: number;
+  status: 'pending' | 'out_for_delivery' | 'delivered';
+  createdAt: Date;
+}
+```
+
+---
+
+## 🔐 SEGURIDAD EN FIRESTORE
+
+Reglas de seguridad implementadas en `Firebase Console`:
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Productos: lectura pública, escritura solo admin
+    match /productos/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Órdenes: lectura/escritura cualquiera (por ahora)
+    match /ordenes/{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Caja: lectura/escritura para staff
+    match /caja/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+
+---
+
+## 🚀 PRÓXIMOS PASOS (OPCIONAL)
+
+### Mejoras Futuras
+- ⏳ Dashboard con analytics
+- ⏳ Persistencia de PendingDeliveries en Firebase
+- ⏳ Badge de contador en botón "Entregas Pendientes"
+- ⏳ Configuración dinámica de mesas (no solo 9 fijas)
+- ⏳ Roles y permisos de usuario
+- ⏳ Reportes de ventas por día/mes
+- ⏳ Integración con impresoras térmicas
+- ⏳ Sistema de descuentos y promociones
+
+---
+
+## 📞 SOPORTE
+
+Para problemas específicos, ver: `TROUBLESHOOTING.md`
+
+**Versión**: 1.0.0  
+**Status**: ✅ PRODUCCIÓN LISTA
     "telefono": "+123",
     "direccion": "Calle 10"
   },
