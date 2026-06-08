@@ -1,13 +1,42 @@
 import { useNavigate } from 'react-router';
-import { useApp } from '../context/AppContext';
+import { useApp, Order } from '../context/AppContext';
 import { ArrowLeft, Store, Truck, X } from 'lucide-react';
 import { toast } from 'sonner';
+
+function isKitchenOrder(order: Order): boolean {
+  if (order.forKitchen === false) return false;
+  if (order.forKitchen === true) return true;
+  if (order.orderType === 'delivery') return true;
+  if (order.status === 'completed' || order.status === 'cancelled') return false;
+  // Órdenes locales antiguas de cobro (no comanda de cocina)
+  if (order.amountReceived !== undefined && order.amountReceived > 0) return false;
+  return true;
+}
+
+function getItemComment(order: Order, item: Order['items'][number], idx: number): string | undefined {
+  const directComment = item.comment?.trim();
+  if (directComment) return directComment;
+
+  const productId = item.product?.id;
+  if (productId && order.itemComments?.[productId]?.trim()) {
+    return order.itemComments[productId].trim();
+  }
+
+  const indexComment = order.itemComments?.[String(idx)]?.trim();
+  if (indexComment) return indexComment;
+
+  return undefined;
+}
 
 export default function Kitchen() {
   const navigate = useNavigate();
   const { orders, updateOrderStatus } = useApp();
 
-  const activeOrders = orders.filter(o => o.status !== 'completed');
+  const activeOrders = orders.filter(o =>
+    o.status !== 'completed' &&
+    o.status !== 'cancelled' &&
+    isKitchenOrder(o)
+  );
   const pendingOrders = activeOrders.filter(o => o.status === 'pending');
   const preparingOrders = activeOrders.filter(o => o.status === 'preparing');
   const readyOrders = activeOrders.filter(o => o.status === 'ready');
@@ -58,7 +87,21 @@ export default function Kitchen() {
         </p>
       </div>
       <div className="space-y-4 p-4 bg-secondary rounded-b min-h-[400px]">
-        {orders.map(order => (
+        {orders.map(order => {
+          const itemNotes = order.items
+            .map((item, idx) => {
+              const comment = getItemComment(order, item, idx);
+              const productName = item.product?.name;
+              if (!comment || !productName) return null;
+              return `${productName}: ${comment}`;
+            })
+            .filter(Boolean) as string[];
+
+          // kitchenNote ya incluye los mismos comentarios (formato "Producto x1: nota")
+          const kitchenNotes =
+            order.kitchenNote?.trim() || itemNotes.join('\n');
+
+          return (
           <div key={order.id} className="bg-card border border-border rounded p-4 shadow-sm">
             {/* Order Header */}
             <div className="flex justify-between items-start mb-3">
@@ -80,12 +123,15 @@ export default function Kitchen() {
                   )}
                 </div>
                 {order.orderType === 'local' && order.tableNumber && (
-                  <p className="text-muted-foreground text-sm">Mesa {order.tableNumber}</p>
+                  <p className="text-muted-foreground text-sm">Mesa {order.tableNumber.replace('Mesa ', '')}</p>
                 )}
                 {order.orderType === 'delivery' && order.deliveryInfo && (
                   <div className="text-muted-foreground text-sm">
                     <p>{order.deliveryInfo.customerName}</p>
                     <p className="text-xs">{order.deliveryInfo.phone}</p>
+                    {order.paymentPending && (
+                      <p className="text-xs text-amber-600 font-semibold mt-1">⏳ Pago pendiente</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -95,7 +141,7 @@ export default function Kitchen() {
             </div>
 
             {/* Order Items */}
-            <div className="border-t border-border pt-3 mb-4 space-y-2">
+            <div className="border-t border-border pt-3 mb-4 space-y-3">
               {order.items && order.items.length > 0 ? (
                 order.items.map((item, idx) => {
                   const product = item.product || (typeof item === 'object' && 'name' in item ? item : null);
@@ -106,17 +152,31 @@ export default function Kitchen() {
                       </div>
                     );
                   }
+
                   return (
-                    <div key={idx} className="flex justify-between">
-                      <span style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}>
-                        {item.quantity}x
-                      </span>
-                      <span className="flex-1 ml-3">{product.name}</span>
+                    <div key={idx} className="border-l-2 border-accent pl-3">
+                      <div className="flex justify-between">
+                        <span style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}>
+                          {item.quantity}x
+                        </span>
+                        <span className="flex-1 ml-3">{product.name}</span>
+                      </div>
                     </div>
                   );
                 })
               ) : (
                 <div className="text-muted-foreground text-sm">Sin items</div>
+              )}
+
+              {kitchenNotes && (
+                <div className="mt-4 pt-3 border-t-2 border-dashed border-orange-300">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-orange-700 mb-2">
+                    Notas de la comanda
+                  </p>
+                  <div className="text-sm text-orange-800 font-medium bg-orange-50 px-3 py-3 rounded border border-orange-200 whitespace-pre-line">
+                    {kitchenNotes}
+                  </div>
+                </div>
               )}
             </div>
 
@@ -140,7 +200,7 @@ export default function Kitchen() {
               </button>
             </div>
           </div>
-        ))}
+        )})}
         {orders.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
             <p style={{ fontFamily: 'var(--font-sans)' }}>No hay órdenes</p>

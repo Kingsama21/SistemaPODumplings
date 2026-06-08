@@ -23,6 +23,15 @@ export interface ProductoEnOrden {
   nombre: string;
   precio: number;
   cantidad: number;
+  comment?: string;
+}
+
+export interface CrearOrdenOptions {
+  forKitchen?: boolean;
+  initialStatus?: 'pending' | 'preparing' | 'ready' | 'completed' | 'cancelled';
+  kitchenNote?: string;
+  paymentPending?: boolean;
+  deliveryFee?: number;
 }
 
 export interface ClienteDelivery {

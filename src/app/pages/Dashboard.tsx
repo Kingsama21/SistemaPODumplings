@@ -1,14 +1,23 @@
-import { Link } from 'react-router';
-import { Plus, ClipboardList, ChefHat, Receipt, Settings, DollarSign, TrendingUp, AlertCircle, Package, History } from 'lucide-react';
+import { Link, useNavigate } from 'react-router';
+import { Plus, ClipboardList, ChefHat, Receipt, Settings, DollarSign, TrendingUp, AlertCircle, Package, History, Bike, LogOut } from 'lucide-react';
 import Logo from '../components/Logo';
 import { useApp } from '../context/AppContext';
+import { useUser } from '../context/UserContext';
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 export default function Dashboard() {
   const { orders, products, cashTransactions, getLowStockIngredients } = useApp();
+  const { user, logout, isAdmin, isMesero } = useUser();
+  const navigate = useNavigate();
+  
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
   
   // Calcular estadísticas
   const todayStats = useMemo(() => {
@@ -76,14 +85,16 @@ export default function Dashboard() {
   }, [orders, products, getLowStockIngredients]);
 
   const menuItems = [
-    { to: '/nueva-orden', icon: Plus, label: 'Nueva Orden', color: 'bg-accent text-accent-foreground' },
-    { to: '/ordenes', icon: ClipboardList, label: 'Ver Órdenes', color: 'bg-primary text-primary-foreground' },
-    { to: '/cocina', icon: ChefHat, label: 'Cocina - Comandas', color: 'bg-red-600 text-white font-bold' },
-    { to: '/tickets', icon: Receipt, label: 'Tickets', color: 'bg-primary text-primary-foreground' },
-    { to: '/caja', icon: DollarSign, label: 'Control de Caja', color: 'bg-primary text-primary-foreground' },
-    { to: '/historial', icon: History, label: 'Historial de Ventas', color: 'bg-primary text-primary-foreground' },
-    { to: '/admin', icon: Settings, label: 'Administración', color: 'bg-secondary text-secondary-foreground' },
-  ];
+    { to: '/mesas', icon: Plus, label: 'Mesas', color: 'bg-accent text-accent-foreground', admin: false },
+    { to: '/nueva-orden', icon: Bike, label: 'Delivery', color: 'bg-accent text-accent-foreground', admin: true },
+    { to: '/entregas', icon: Package, label: 'Entregas Pendientes', color: 'bg-orange-600 text-white', admin: true },
+    { to: '/ordenes', icon: ClipboardList, label: 'Ver Órdenes', color: 'bg-primary text-primary-foreground', admin: true },
+    { to: '/cocina', icon: ChefHat, label: 'Cocina - Comandas', color: 'bg-red-600 text-white font-bold', admin: false },
+    { to: '/tickets', icon: Receipt, label: 'Tickets', color: 'bg-primary text-primary-foreground', admin: true },
+    { to: '/caja', icon: DollarSign, label: 'Control de Caja', color: 'bg-primary text-primary-foreground', admin: true },
+    { to: '/historial', icon: History, label: 'Historial de Ventas', color: 'bg-primary text-primary-foreground', admin: true },
+    { to: '/admin', icon: Settings, label: 'Administración', color: 'bg-secondary text-secondary-foreground', admin: true },
+  ].filter(item => isAdmin || !item.admin);
 
   const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6'];
 
@@ -92,15 +103,26 @@ export default function Dashboard() {
       {/* Header con logo y título */}
       <header className="border-b border-border bg-card">
         <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="flex items-center gap-4">
-            <Logo size="lg" />
-            <div>
-              <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '2rem', fontWeight: 700, letterSpacing: '0.02em' }}>
-                Dumplings del Dragón
-              </h1>
-              <p className="text-muted-foreground" style={{ fontFamily: 'var(--font-sans)', fontSize: '0.875rem' }}>
-                Sistema de punto de venta - {new Date().toLocaleDateString('es-MX', { weekday: 'long', month: 'long', day: 'numeric' })}
-              </p>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <Logo size="lg" />
+              <div>
+                <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '2rem', fontWeight: 700, letterSpacing: '0.02em' }}>
+                  Dumplings del Dragón
+                </h1>
+                <p className="text-muted-foreground" style={{ fontFamily: 'var(--font-sans)', fontSize: '0.875rem' }}>
+                  Sistema de punto de venta - {new Date().toLocaleDateString('es-MX', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <span className="text-sm text-muted-foreground">
+                {user?.name} <Badge variant="outline">{isAdmin ? 'Admin' : 'Mesero'}</Badge>
+              </span>
+              <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
+                <LogOut size={16} />
+                Salir
+              </Button>
             </div>
           </div>
         </div>
@@ -108,7 +130,8 @@ export default function Dashboard() {
 
       {/* Main content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-12">
-        {/* Estadísticas del día */}
+        {/* Estadísticas del día - Solo para Admin */}
+        {isAdmin && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <Card>
             <CardHeader className="pb-2">
@@ -155,8 +178,10 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+        )}
 
-        {/* Gráficos principales */}
+        {/* Gráficos principales - Solo para Admin */}
+        {isAdmin && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           {/* Órdenes por hora */}
           {todayStats.hourlyData.length > 0 && (
@@ -202,9 +227,10 @@ export default function Dashboard() {
             </Card>
           )}
         </div>
+        )}
 
-        {/* Stock bajo - Alertas */}
-        {todayStats.lowStockIngredients.length > 0 && (
+        {/* Stock bajo - Alertas - Solo para Admin */}
+        {isAdmin && todayStats.lowStockIngredients.length > 0 && (
           <Card className="mb-8 border-orange-200 bg-orange-50 dark:bg-orange-950 dark:border-orange-800">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-orange-600">

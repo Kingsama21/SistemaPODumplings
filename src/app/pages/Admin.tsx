@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useApp, Product, Ingredient, Category, Discount, Promotion } from '../context/AppContext';
-import { ArrowLeft, Plus, Edit2, Trash2, X, Save, Tag, Package, Percent, Ticket, AlertCircle } from 'lucide-react';
+import { useApp, Product, Ingredient, Category, Discount, Promotion, Compra } from '../context/AppContext';
+import { ArrowLeft, Plus, Edit2, Trash2, X, Save, Tag, Package, Percent, Ticket, AlertCircle, ShoppingCart, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { descargarPDFCompras } from '../../services/compras-pdf.service';
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -37,7 +38,142 @@ export default function Admin() {
     deleteAllCashTransactions,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'products' | 'ingredients' | 'discounts' | 'promotions' | 'categories' | 'cleanup'>('products');
+  const [activeTab, setActiveTab] = useState<'products' | 'ingredients' | 'discounts' | 'promotions' | 'categories' | 'catalog' | 'compras' | 'cleanup'>('catalog');
+
+  // ============ CATÁLOGO (Vista por categoría) ============
+  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
+  const [editingPrice, setEditingPrice] = useState('');
+
+  const handleSavePrice = async (productId: string, newPrice: string) => {
+    const price = parseFloat(newPrice);
+    if (isNaN(price) || price <= 0) {
+      toast.error('Precio inválido');
+      return;
+    }
+
+    const product = products.find(p => p.id === productId);
+    if (product) {
+      try {
+        await updateProduct(productId, { ...product, price });
+        toast.success('Precio actualizado ✓');
+        setEditingPriceId(null);
+        setEditingPrice('');
+      } catch (error) {
+        console.error('Error al guardar precio:', error);
+        toast.error('Error al guardar');
+      }
+    }
+  };
+
+  // Agrupar productos por categoría
+  const productsByCategory = categories.map(cat => ({
+    category: cat,
+    products: products.filter(p => p.category === cat.name).sort((a, b) => a.name.localeCompare(b.name))
+  })).filter(group => group.products.length > 0);
+
+  // ============ COMPRAS ============
+  const [showCompraForm, setShowCompraForm] = useState(false);
+  const [editingCompra, setEditingCompra] = useState<Compra | null>(null);
+  const [compraForm, setCompraForm] = useState({
+    fecha: new Date().toISOString().split('T')[0],
+    descripcion: '',
+    cantidad: '',
+    unidad: '',
+    precioUnitario: '',
+    proveedor: '',
+  });
+
+  const { compras, addCompra, updateCompra, deleteCompra, getComprasByDateRange } = useApp();
+
+  const openCompraForm = (compra?: Compra) => {
+    if (compra) {
+      setEditingCompra(compra);
+      setCompraForm({
+        fecha: new Date(compra.fecha).toISOString().split('T')[0],
+        descripcion: compra.descripcion,
+        cantidad: compra.cantidad.toString(),
+        unidad: compra.unidad,
+        precioUnitario: compra.precioUnitario.toString(),
+        proveedor: compra.proveedor || '',
+      });
+    } else {
+      setEditingCompra(null);
+      setCompraForm({
+        fecha: new Date().toISOString().split('T')[0],
+        descripcion: '',
+        cantidad: '',
+        unidad: '',
+        precioUnitario: '',
+        proveedor: '',
+      });
+    }
+    setShowCompraForm(true);
+  };
+
+  const closeCompraForm = () => {
+    setShowCompraForm(false);
+    setEditingCompra(null);
+    setCompraForm({
+      fecha: new Date().toISOString().split('T')[0],
+      descripcion: '',
+      cantidad: '',
+      unidad: '',
+      precioUnitario: '',
+      proveedor: '',
+    });
+  };
+
+  const handleSaveCompra = async () => {
+    if (!compraForm.descripcion || !compraForm.cantidad || !compraForm.unidad || !compraForm.precioUnitario) {
+      toast.error('Por favor completa todos los campos requeridos');
+      return;
+    }
+
+    const cantidad = parseFloat(compraForm.cantidad);
+    const precioUnitario = parseFloat(compraForm.precioUnitario);
+
+    if (isNaN(cantidad) || cantidad <= 0 || isNaN(precioUnitario) || precioUnitario <= 0) {
+      toast.error('Cantidad y precio deben ser números válidos');
+      return;
+    }
+
+    try {
+      if (editingCompra) {
+        await updateCompra(editingCompra.id, {
+          fecha: new Date(compraForm.fecha),
+          descripcion: compraForm.descripcion,
+          cantidad,
+          unidad: compraForm.unidad,
+          precioUnitario,
+          total: cantidad * precioUnitario,
+          proveedor: compraForm.proveedor || undefined,
+        });
+        toast.success('Compra actualizada');
+      } else {
+        await addCompra({
+          fecha: new Date(compraForm.fecha),
+          descripcion: compraForm.descripcion,
+          cantidad,
+          unidad: compraForm.unidad,
+          precioUnitario,
+          total: cantidad * precioUnitario,
+          proveedor: compraForm.proveedor || undefined,
+        });
+        toast.success('Compra registrada');
+      }
+      closeCompraForm();
+    } catch (error) {
+      console.error('Error al guardar compra:', error);
+      toast.error('Error al guardar');
+    }
+  };
+
+  const handleDeleteCompra = (id: string) => {
+    if (confirm('¿Eliminar esta compra?')) {
+      deleteCompra(id);
+      toast.success('Compra eliminada');
+    }
+  };
 
   // ============ PRODUCTOS ============
   const [showProductForm, setShowProductForm] = useState(false);
@@ -462,6 +598,8 @@ export default function Admin() {
         {/* Tabs */}
         <div className="flex gap-2 mb-8 border-b border-border overflow-x-auto">
           {[
+            { id: 'catalog', label: 'Catálogo', icon: Package },
+            { id: 'compras', label: 'Compras', icon: ShoppingCart },
             { id: 'products', label: 'Productos', icon: Package },
             { id: 'ingredients', label: 'Ingredientes', icon: AlertCircle },
             { id: 'discounts', label: 'Descuentos', icon: Percent },
@@ -484,6 +622,208 @@ export default function Admin() {
             </button>
           ))}
         </div>
+
+        {/* CATÁLOGO - Vista por Categoría */}
+        {activeTab === 'catalog' && (
+          <div>
+            <div className="mb-6">
+              <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '1.25rem', fontWeight: 600 }}>
+                📋 Catálogo de Productos
+              </h2>
+              <p className="text-muted-foreground text-sm mt-1">Haz clic en los precios para editarlos</p>
+            </div>
+
+            <div className="space-y-8">
+              {productsByCategory.map((group) => (
+                <div key={group.category.id} className="border border-border rounded-lg overflow-hidden">
+                  <div className="bg-secondary p-4 border-b border-border">
+                    <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.125rem', fontWeight: 600 }}>
+                      {group.category.name}
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-1">{group.products.length} producto(s)</p>
+                  </div>
+                  
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-card border-b border-border">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-sm font-semibold">Producto</th>
+                          <th className="px-6 py-3 text-right text-sm font-semibold">Precio</th>
+                          <th className="px-6 py-3 text-center text-sm font-semibold">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.products.map((product) => (
+                          <tr key={product.id} className="border-b border-border hover:bg-secondary/50 transition-colors">
+                            <td className="px-6 py-4">
+                              <span style={{ fontFamily: 'var(--font-sans)', fontWeight: 500 }}>
+                                {product.name}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              {editingPriceId === product.id ? (
+                                <div className="flex items-center justify-end gap-2">
+                                  <span className="text-muted-foreground">$</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={editingPrice}
+                                    onChange={(e) => setEditingPrice(e.target.value)}
+                                    autoFocus
+                                    className="w-24 px-2 py-1 border border-border rounded bg-input text-right"
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleSavePrice(product.id, editingPrice);
+                                      if (e.key === 'Escape') setEditingPriceId(null);
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                <span
+                                  onClick={() => {
+                                    setEditingPriceId(product.id);
+                                    setEditingPrice(product.price.toString());
+                                  }}
+                                  className="text-accent font-semibold cursor-pointer hover:underline"
+                                  style={{ fontFamily: 'var(--font-sans)', fontSize: '1.125rem' }}
+                                >
+                                  ${product.price}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                {editingPriceId === product.id && (
+                                  <>
+                                    <button
+                                      onClick={() => handleSavePrice(product.id, editingPrice)}
+                                      className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors"
+                                      style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}
+                                    >
+                                      Guardar
+                                    </button>
+                                    <button
+                                      onClick={() => setEditingPriceId(null)}
+                                      className="px-3 py-1 border border-border rounded text-xs hover:bg-secondary transition-colors"
+                                      style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </>
+                                )}
+                                <button
+                                  onClick={() => openProductForm(product)}
+                                  className="p-1.5 hover:bg-secondary rounded transition-colors"
+                                  title="Editar producto"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteProduct(product.id, product.name)}
+                                  className="p-1.5 text-destructive hover:bg-destructive/10 rounded transition-colors"
+                                  title="Eliminar producto"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* COMPRAS */}
+        {activeTab === 'compras' && (
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '1.25rem', fontWeight: 600 }}>
+                📦 Registro de Compras
+              </h2>
+              <div className="flex gap-2">
+                {compras.length > 0 && (
+                  <button
+                    onClick={() => descargarPDFCompras(compras, `retribucion-${new Date().toISOString().split('T')[0]}.pdf`)}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}
+                  >
+                    <Download size={18} />
+                    Descargar PDF
+                  </button>
+                )}
+                <Button onClick={() => openCompraForm()} className="flex items-center gap-2">
+                  <Plus size={20} />
+                  Nueva Compra
+                </Button>
+              </div>
+            </div>
+
+            {compras.length === 0 ? (
+              <div className="text-center py-12 bg-secondary rounded-lg border border-border">
+                <ShoppingCart size={48} className="mx-auto mb-4 opacity-30" />
+                <p className="text-muted-foreground">No hay compras registradas</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-secondary border-b border-border">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-sm font-semibold">Fecha</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold">Descripción</th>
+                      <th className="px-6 py-3 text-center text-sm font-semibold">Cantidad</th>
+                      <th className="px-6 py-3 text-center text-sm font-semibold">Unidad</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold">Precio Unit.</th>
+                      <th className="px-6 py-3 text-center text-sm font-semibold">Proveedor</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold">Total</th>
+                      <th className="px-6 py-3 text-center text-sm font-semibold">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {compras.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()).map((compra) => (
+                      <tr key={compra.id} className="border-b border-border hover:bg-secondary/50 transition-colors">
+                        <td className="px-6 py-4 text-sm">{new Date(compra.fecha).toLocaleDateString('es-MX')}</td>
+                        <td className="px-6 py-4 text-sm">{compra.descripcion}</td>
+                        <td className="px-6 py-4 text-center text-sm">{compra.cantidad}</td>
+                        <td className="px-6 py-4 text-center text-sm">{compra.unidad}</td>
+                        <td className="px-6 py-4 text-right text-sm font-semibold">${compra.precioUnitario.toFixed(2)}</td>
+                        <td className="px-6 py-4 text-center text-sm">{compra.proveedor || '-'}</td>
+                        <td className="px-6 py-4 text-right text-sm font-bold text-accent">${compra.total.toFixed(2)}</td>
+                        <td className="px-6 py-4 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => openCompraForm(compra)}
+                              className="p-1.5 hover:bg-secondary rounded transition-colors"
+                              title="Editar"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteCompra(compra.id)}
+                              className="p-1.5 text-destructive hover:bg-destructive/10 rounded transition-colors"
+                              title="Eliminar"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="mt-4 p-4 bg-secondary rounded flex justify-end gap-8">
+                  <div>
+                    <p className="text-muted-foreground text-sm">Total Compras</p>
+                    <p className="text-2xl font-bold text-accent">${compras.reduce((sum, c) => sum + c.total, 0).toFixed(2)}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* PRODUCTOS */}
         {activeTab === 'products' && (
@@ -844,6 +1184,15 @@ export default function Admin() {
         setCategoryName={setCategoryName}
         isEditing={!!editingCategory}
       />
+
+      <CompraDialog
+        isOpen={showCompraForm}
+        onClose={closeCompraForm}
+        onSave={handleSaveCompra}
+        formData={compraForm}
+        setFormData={setCompraForm}
+        isEditing={!!editingCompra}
+      />
     </div>
   );
 }
@@ -951,6 +1300,32 @@ function DiscountDialog({ isOpen, onClose, onSave, formData, setFormData, produc
               </SelectContent>
             </Select>
           </div>
+          {formData.applicableTo === 'product' && (
+            <div>
+              <label className="text-sm font-medium">Producto</label>
+              <Select value={formData.targetId} onValueChange={(value) => setFormData({ ...formData, targetId: value })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona un producto" />
+                </SelectTrigger>
+                <SelectContent>
+                  {products.map((product: Product) => (
+                    <SelectItem key={product.id} value={product.id}>
+                      {product.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={formData.active}
+              onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
+              className="rounded"
+            />
+            Descuento activo
+          </label>
           <div className="flex gap-2 justify-end">
             <Button variant="outline" onClick={onClose}>Cancelar</Button>
             <Button onClick={onSave}>Guardar</Button>
@@ -1026,6 +1401,8 @@ function IngredientDialog({ isOpen, onClose, onSave, formData, setFormData, isEd
 }
 
 function PromotionDialog({ isOpen, onClose, onSave, formData, setFormData, discounts, isEditing }: any) {
+  const activeDiscounts = discounts.filter((d: Discount) => d.active);
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent>
@@ -1045,14 +1422,20 @@ function PromotionDialog({ isOpen, onClose, onSave, formData, setFormData, disco
             <label className="text-sm font-medium">Descuento</label>
             <Select value={formData.discountId} onValueChange={(value) => setFormData({ ...formData, discountId: value })}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Selecciona un descuento activo" />
               </SelectTrigger>
               <SelectContent>
-                {discounts.map((d: Discount) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.name} ({d.type === 'percentage' ? `${d.value}%` : `$${d.value}`})
+                {activeDiscounts.length === 0 ? (
+                  <SelectItem value="__none" disabled>
+                    Crea un descuento activo primero
                   </SelectItem>
-                ))}
+                ) : (
+                  activeDiscounts.map((d: Discount) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.name} ({d.type === 'percentage' ? `${d.value}%` : `$${d.value}`})
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -1076,6 +1459,15 @@ function PromotionDialog({ isOpen, onClose, onSave, formData, setFormData, disco
               />
             </div>
           </div>
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={formData.active}
+              onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
+              className="rounded"
+            />
+            Promoción activa
+          </label>
           <div className="flex gap-2 justify-end">
             <Button variant="outline" onClick={onClose}>Cancelar</Button>
             <Button onClick={onSave}>Guardar</Button>
@@ -1102,6 +1494,94 @@ function CategoryDialog({ isOpen, onClose, onSave, categoryName, setCategoryName
               placeholder="Nombre de la categoría"
             />
           </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button onClick={onSave}>Guardar</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CompraDialog({ isOpen, onClose, onSave, formData, setFormData, isEditing }: any) {
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{isEditing ? 'Editar Compra' : 'Nueva Compra'}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium">Fecha</label>
+            <Input
+              type="date"
+              value={formData.fecha}
+              onChange={(e) => setFormData({ ...formData, fecha: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Descripción *</label>
+            <Input
+              value={formData.descripcion}
+              onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
+              placeholder="Ej: Carne molida de cerdo"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium">Cantidad *</label>
+              <Input
+                type="number"
+                step="0.01"
+                value={formData.cantidad}
+                onChange={(e) => setFormData({ ...formData, cantidad: e.target.value })}
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Unidad *</label>
+              <Select value={formData.unidad} onValueChange={(value) => setFormData({ ...formData, unidad: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="kg">kg</SelectItem>
+                  <SelectItem value="L">L</SelectItem>
+                  <SelectItem value="unidad">unidad</SelectItem>
+                  <SelectItem value="docena">docena</SelectItem>
+                  <SelectItem value="paquete">paquete</SelectItem>
+                  <SelectItem value="caja">caja</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium">Precio Unitario *</label>
+            <Input
+              type="number"
+              step="0.01"
+              value={formData.precioUnitario}
+              onChange={(e) => setFormData({ ...formData, precioUnitario: e.target.value })}
+              placeholder="0.00"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Proveedor</label>
+            <Input
+              value={formData.proveedor}
+              onChange={(e) => setFormData({ ...formData, proveedor: e.target.value })}
+              placeholder="Ej: Proveedor XYZ"
+            />
+          </div>
+          {formData.cantidad && formData.precioUnitario && (
+            <div className="bg-secondary p-3 rounded">
+              <p className="text-sm text-muted-foreground">Total</p>
+              <p className="text-xl font-bold text-accent">
+                ${(parseFloat(formData.cantidad) * parseFloat(formData.precioUnitario)).toFixed(2)}
+              </p>
+            </div>
+          )}
           <div className="flex gap-2 justify-end">
             <Button variant="outline" onClick={onClose}>Cancelar</Button>
             <Button onClick={onSave}>Guardar</Button>

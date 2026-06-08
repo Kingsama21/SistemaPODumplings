@@ -21,6 +21,12 @@ export default function History() {
       case "today":
         dateStart.setHours(0, 0, 0, 0);
         break;
+      case "yesterday":
+        dateStart.setDate(now.getDate() - 1);
+        dateStart.setHours(0, 0, 0, 0);
+        now.setDate(now.getDate() - 1);
+        now.setHours(23, 59, 59, 999);
+        break;
       case "week":
         dateStart.setDate(now.getDate() - now.getDay());
         dateStart.setHours(0, 0, 0, 0);
@@ -98,14 +104,14 @@ export default function History() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="flex gap-2 mb-8">
-          {["today", "week", "month", "all"].map((t) => (
+        <div className="flex gap-2 mb-8 flex-wrap">
+          {["today", "yesterday", "week", "month", "all"].map((t) => (
             <Button
               key={t}
               onClick={() => setFilterType(t)}
               variant={filterType === t ? "default" : "outline"}
             >
-              {t === "today" ? "Hoy" : t === "week" ? "Semana" : t === "month" ? "Mes" : "Todo"}
+              {t === "today" ? "Hoy" : t === "yesterday" ? "Ayer" : t === "week" ? "Semana" : t === "month" ? "Mes" : "Todo"}
             </Button>
           ))}
         </div>

@@ -7,38 +7,94 @@ import Tickets from './pages/Tickets';
 import History from './pages/History';
 import Admin from './pages/Admin';
 import Cash from './pages/Cash';
+import Tables from './pages/Tables';
+import Deliveries from './pages/Deliveries';
+import Login from './pages/Login';
+import { ProtectedRoute } from './components/ProtectedRoute';
 
 export const router = createBrowserRouter([
   {
+    path: '/login',
+    Component: Login,
+  },
+  {
     path: '/',
-    Component: Dashboard,
+    Component: () => (
+      <ProtectedRoute>
+        <Dashboard />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/mesas',
+    Component: () => (
+      <ProtectedRoute>
+        <Tables />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/entregas',
+    Component: () => (
+      <ProtectedRoute requiredRole="admin">
+        <Deliveries />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/nueva-orden',
-    Component: NewOrder,
+    Component: () => (
+      <ProtectedRoute>
+        <NewOrder />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/ordenes',
-    Component: Orders,
+    Component: () => (
+      <ProtectedRoute requiredRole="admin">
+        <Orders />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/cocina',
-    Component: Kitchen,
+    Component: () => (
+      <ProtectedRoute>
+        <Kitchen />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/tickets',
-    Component: Tickets,
+    Component: () => (
+      <ProtectedRoute requiredRole="admin">
+        <Tickets />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/caja',
-    Component: Cash,
+    Component: () => (
+      <ProtectedRoute requiredRole="admin">
+        <Cash />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/historial',
-    Component: History,
+    Component: () => (
+      <ProtectedRoute requiredRole="admin">
+        <History />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/admin',
-    Component: Admin,
+    Component: () => (
+      <ProtectedRoute requiredRole="admin">
+        <Admin />
+      </ProtectedRoute>
+    ),
   },
 ]);

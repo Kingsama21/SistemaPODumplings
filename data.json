@@ -1,0 +1,243 @@
+[
+  {
+    "number": 1,
+    "orders": [],
+    "total": 0,
+    "createdAt": "2026-06-06T02:39:33.576Z",
+    "createdByMesero": "admin",
+    "createdByMeseroId": "user_1780700987502",
+    "actions": [
+      {
+        "meseroName": "admin",
+        "meseroId": "user_1780700987502",
+        "action": "created",
+        "timestamp": "2026-06-06T01:25:57.258Z"
+      }
+    ],
+    "archived": false
+  },
+  {
+    "number": 2,
+    "orders": [],
+    "total": 0,
+    "createdAt": "2026-06-01T05:02:08.539Z",
+    "createdByMesero": "",
+    "createdByMeseroId": "",
+    "actions": [],
+    "archived": false
+  },
+  {
+    "number": 3,
+    "orders": [],
+    "total": 0,
+    "createdAt": "2026-06-05T05:28:43.701Z",
+    "createdByMesero": "",
+    "createdByMeseroId": "",
+    "actions": [],
+    "archived": false
+  },
+  {
+    "number": 4,
+    "orders": [
+      {
+        "id": "order_1780714566101_0.3380539702755193",
+        "product": {
+          "id": "kgtGobOmrkBXnysnZntL",
+          "name": "Dumpling de Camaron",
+          "price": 35,
+          "category": "Dumplings",
+          "image": ""
+        },
+        "quantity": 1,
+        "timestamp": "2026-06-06T02:56:06.101Z",
+        "status": "sent"
+      },
+      {
+        "id": "order_1780714571365_0.3653322916862286",
+        "product": {
+          "id": "xlxBLrd3BQNRxkQInyTr",
+          "name": "Dumpling de Verdura",
+          "price": 25,
+          "category": "Dumplings",
+          "image": ""
+        },
+        "quantity": 1,
+        "timestamp": "2026-06-06T02:56:11.365Z",
+        "status": "sent"
+      },
+      {
+        "id": "order_1780714578571_0.35987679248987936",
+        "product": {
+          "id": "dqFVL4F3JvcbuoaujPXz",
+          "name": "Dumpling de Res",
+          "price": 30,
+          "category": "Dumplings",
+          "image": ""
+        },
+        "quantity": 1,
+        "timestamp": "2026-06-06T02:56:18.571Z",
+        "status": "sent"
+      },
+      {
+        "id": "order_1780714586289_0.48395353321039547",
+        "product": {
+          "id": "qe9CccbmLmW73LAqirYs",
+          "name": "Wonton ",
+          "price": 90,
+          "category": "Wonton",
+          "image": ""
+        },
+        "quantity": 1,
+        "timestamp": "2026-06-06T02:56:26.289Z",
+        "status": "sent"
+      },
+      {
+        "id": "order_1780714592435_0.36872324097549936",
+        "product": {
+          "id": "NBeMhas4Y0RUA14alDtg",
+          "name": "Té Oloong Botella",
+          "price": 25,
+          "category": "Bebida",
+          "image": ""
+        },
+        "quantity": 1,
+        "timestamp": "2026-06-06T02:56:32.435Z",
+        "status": "sent"
+      }
+    ],
+    "total": 205,
+    "createdAt": "2026-06-04T02:49:56.854Z",
+    "createdByMesero": "admin",
+    "createdByMeseroId": "user_1780713536065",
+    "actions": [
+      {
+        "meseroName": "admin",
+        "meseroId": "user_1780713536065",
+        "action": "created",
+        "timestamp": "2026-06-06T02:56:06.101Z"
+      }
+    ],
+    "archived": false
+  },
+  {
+    "number": 5,
+    "orders": [],
+    "total": 0,
+    "createdAt": "2026-06-02T04:14:38.154Z",
+    "createdByMesero": "",
+    "createdByMeseroId": "",
+    "actions": [],
+    "archived": false
+  },
+  {
+    "number": 6,
+    "orders": [],
+    "total": 0,
+    "createdAt": "2026-06-04T03:12:55.808Z",
+    "createdByMesero": "",
+    "createdByMeseroId": "",
+    "actions": [],
+    "archived": false
+  },
+  {
+    "number": 7,
+    "orders": [],
+    "total": 0,
+    "createdAt": "2026-06-04T05:28:22.235Z",
+    "createdByMesero": "",
+    "createdByMeseroId": "",
+    "actions": [],
+    "archived": false
+  },
+  {
+    "number": 8,
+    "orders": [],
+    "total": 0,
+    "createdAt": "2026-06-05T05:27:33.409Z",
+    "createdByMesero": "",
+    "createdByMeseroId": "",
+    "actions": [],
+    "archived": false
+  },
+  {
+    "number": 9,
+    "orders": [
+      {
+        "id": "order_1780711337529_0.4701742013125635",
+        "product": {
+          "id": "49BITdu0MD4WuGXQI9CV",
+          "name": "Carbonara y 3 Camphi",
+          "price": 210,
+          "category": "Ramen Carbonara y Dumplings",
+          "image": ""
+        },
+        "quantity": 1,
+        "timestamp": "2026-06-06T02:02:17.529Z",
+        "status": "sent"
+      },
+      {
+        "id": "order_1780711341818_0.8219276711771596",
+        "product": {
+          "id": "lOvwjzKxZPlnggIwMQ5T",
+          "name": " Carbonara y 3 Camaron",
+          "price": 190,
+          "category": "Ramen Carbonara y Dumplings",
+          "image": ""
+        },
+        "quantity": 1,
+        "timestamp": "2026-06-06T02:02:21.818Z",
+        "status": "sent",
+        "comment": "cheese"
+      },
+      {
+        "id": "order_1780711346177_0.5093515378010628",
+        "product": {
+          "id": "LfHOCpRVcmMzyI3VHPJk",
+          "name": "Limonada de fresa ",
+          "price": 25,
+          "category": "Bebida",
+          "image": ""
+        },
+        "quantity": 1,
+        "timestamp": "2026-06-06T02:02:26.177Z",
+        "status": "sent"
+      },
+      {
+        "id": "order_1780711346539_0.7854693044069769",
+        "product": {
+          "id": "LfHOCpRVcmMzyI3VHPJk",
+          "name": "Limonada de fresa ",
+          "price": 25,
+          "category": "Bebida",
+          "image": ""
+        },
+        "quantity": 1,
+        "timestamp": "2026-06-06T02:02:26.539Z",
+        "status": "sent"
+      }
+    ],
+    "total": 450,
+    "createdAt": "2026-06-04T03:11:27.517Z",
+    "createdByMesero": "admin",
+    "createdByMeseroId": "user_1780700987502",
+    "actions": [
+      {
+        "meseroName": "admin",
+        "meseroId": "user_1780700987502",
+        "action": "created",
+        "timestamp": "2026-06-06T02:02:17.529Z"
+      }
+    ],
+    "archived": false
+  },
+  {
+    "number": 10,
+    "orders": [],
+    "total": 0,
+    "createdAt": "2026-06-07T00:00:00.000Z",
+    "createdByMesero": "",
+    "createdByMeseroId": "",
+    "actions": [],
+    "archived": false
+  }
+]

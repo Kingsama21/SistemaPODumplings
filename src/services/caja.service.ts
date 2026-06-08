@@ -104,6 +104,38 @@ export async function registrarIngreso(
 }
 
 /**
+ * Registra una propina
+ */
+export async function registrarPropina(
+  monto: number,
+  motivo: string,
+  ordenId?: string
+): Promise<string> {
+  try {
+    const now = Timestamp.now();
+    const movimiento: any = {
+      type: 'tip',
+      amount: monto,
+      description: motivo,
+      timestamp: now,
+      createdAt: now,
+      paymentMethod: 'cash', // Las propinas siempre son en efectivo
+    };
+
+    if (ordenId) {
+      movimiento.ordenId = ordenId;
+    }
+
+    const docRef = await addDoc(collection(db, CASH_COLLECTION), movimiento);
+    console.log(`✓ Propina guardada en Firebase con ID: ${docRef.id}`);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error registrando propina:', error);
+    throw error;
+  }
+}
+
+/**
  * Registra un egreso (gasto)
  */
 export async function registrarEgreso(

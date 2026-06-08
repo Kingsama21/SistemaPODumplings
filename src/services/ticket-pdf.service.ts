@@ -118,6 +118,14 @@ export async function generarTicketPDF(order: Order): Promise<jsPDF> {
     });
     pdf.text(`Tel: ${order.deliveryInfo.phone}`, MARGIN, currentY);
     currentY += 3;
+    
+    // Mostrar monto del envío si existe
+    if (order.deliveryFee && order.deliveryFee > 0) {
+      pdf.setFont(undefined, 'bold');
+      pdf.text(`Envío: $${order.deliveryFee.toFixed(2)}`, MARGIN, currentY);
+      currentY += 3;
+    }
+    
     pdf.setFontSize(fontSize);
   }
 
@@ -125,13 +133,25 @@ export async function generarTicketPDF(order: Order): Promise<jsPDF> {
 
   // PRODUCTOS
   pdf.setFontSize(6);
-  order.items.forEach(item => {
+  order.items.forEach((item, idx) => {
     const total = (item.product.price * item.quantity).toFixed(2);
     const name = item.product.name.substring(0, 20);
     
     pdf.text(`${item.quantity}x ${name}`, MARGIN, currentY);
     pdf.text(`$${total}`, TICKET_WIDTH - MARGIN, currentY, { align: 'right' });
     currentY += 3;
+    
+    // Mostrar comentario si existe
+    const comment = order.itemComments?.[item.product?.id || idx.toString()];
+    if (comment) {
+      pdf.setFont(undefined, 'italic');
+      pdf.setTextColor(200, 100, 0); // Color naranja oscuro
+      const commentLines = pdf.splitTextToSize(`📝 ${comment}`, CONTENT_WIDTH - 2);
+      pdf.text(commentLines, MARGIN + 2, currentY);
+      currentY += (commentLines.length * 2) + 1;
+      pdf.setTextColor(0, 0, 0); // Volver a negro
+      pdf.setFont(undefined, 'normal');
+    }
   });
 
   pdf.setFontSize(fontSize);

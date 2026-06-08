@@ -102,6 +102,10 @@ export default function Cash() {
     .filter(t => t.type === 'expense')
     .reduce((sum, t) => sum + t.amount, 0);
 
+  const totalTips = filteredTransactions
+    .filter(t => t.type === 'tip')
+    .reduce((sum, t) => sum + t.amount, 0);
+
   const balance = totalIncome - totalExpense;
 
   // Desglose por método de pago
@@ -238,7 +242,12 @@ export default function Cash() {
       .filter(t => t.type === 'income' && t.paymentMethod === 'transfer')
       .reduce((sum, t) => sum + t.amount, 0);
 
-    const theoreticalTotal = cashPayments + cardPayments + transferPayments;
+    const totalTips = todayTransactions
+      .filter(t => t.type === 'tip')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    // El total teórico incluye ingresos + propinas (ya que las propinas son en efectivo)
+    const theoreticalTotal = cashPayments + cardPayments + transferPayments + totalTips;
 
     return {
       totalIncome,
@@ -246,6 +255,7 @@ export default function Cash() {
       cashPayments,
       cardPayments,
       transferPayments,
+      totalTips,
       theoreticalTotal,
     };
   };
@@ -427,7 +437,7 @@ export default function Cash() {
               </p>
             </div>
             <p className="text-green-600" style={{ fontFamily: 'var(--font-sans)', fontSize: '2rem', fontWeight: 700 }}>
-              ${totalIncome}
+              ${totalIncome.toFixed(2)}
             </p>
           </div>
 
@@ -441,7 +451,7 @@ export default function Cash() {
               </p>
             </div>
             <p className="text-red-600" style={{ fontFamily: 'var(--font-sans)', fontSize: '2rem', fontWeight: 700 }}>
-              ${totalExpense}
+              ${totalExpense.toFixed(2)}
             </p>
           </div>
 
@@ -455,13 +465,13 @@ export default function Cash() {
               </p>
             </div>
             <p className={balance >= 0 ? 'text-accent' : 'text-red-600'} style={{ fontFamily: 'var(--font-sans)', fontSize: '2rem', fontWeight: 700 }}>
-              ${balance}
+              ${balance.toFixed(2)}
             </p>
           </div>
         </div>
 
         {/* Payment Methods Breakdown */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-card border-2 border-green-200 rounded p-6">
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 bg-green-100 rounded">
@@ -501,6 +511,20 @@ export default function Cash() {
             </div>
             <p className="text-purple-600" style={{ fontFamily: 'var(--font-sans)', fontSize: '1.75rem', fontWeight: 700 }}>
               ${transferIncome.toFixed(2)}
+            </p>
+          </div>
+
+          <div className="bg-card border-2 border-orange-200 rounded p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-orange-100 rounded">
+                <Plus size={24} className="text-orange-600" />
+              </div>
+              <p className="text-muted-foreground" style={{ fontSize: '0.875rem' }}>
+                Propinas
+              </p>
+            </div>
+            <p className="text-orange-600" style={{ fontFamily: 'var(--font-sans)', fontSize: '1.75rem', fontWeight: 700 }}>
+              ${totalTips.toFixed(2)}
             </p>
           </div>
         </div>
