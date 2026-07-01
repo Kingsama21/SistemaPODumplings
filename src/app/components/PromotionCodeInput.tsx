@@ -3,16 +3,25 @@ import { toast } from 'sonner';
 import type { Discount } from '../context/AppContext';
 import {
   applyDiscount,
+  applyManualDiscountToTotal,
   formatDiscountLabel,
   type DiscountResult,
   type DiscountableItem,
 } from '../../services/discount.service';
+
+export interface AutoPromotionSummary {
+  subtotal: number;
+  autoPromotionDiscount: number;
+  totalAfterAutoPromotions: number;
+  appliedPromotions: string[];
+}
 
 interface PromotionCodeInputProps {
   items: DiscountableItem[];
   discounts: Discount[];
   redeemPromotion: (code: string) => Promise<Discount | null>;
   onDiscountChange: (result: DiscountResult | null) => void;
+  autoPromotionSummary?: AutoPromotionSummary;
 }
 
 export function PromotionCodeInput({
@@ -20,12 +29,34 @@ export function PromotionCodeInput({
   discounts,
   redeemPromotion,
   onDiscountChange,
+  autoPromotionSummary,
 }: PromotionCodeInputProps) {
   const [promoCode, setPromoCode] = useState('');
   const [selectedDiscountId, setSelectedDiscountId] = useState('');
   const [applied, setApplied] = useState<DiscountResult | null>(null);
 
   const activeDiscounts = discounts.filter(discount => discount.active);
+  const baseSubtotal = autoPromotionSummary?.subtotal ?? items.reduce(
+    (sum, item) => sum + item.product.price * item.quantity,
+    0
+  );
+
+  const buildDiscountResult = (discount: Discount): DiscountResult => {
+    if (autoPromotionSummary) {
+      const manual = applyManualDiscountToTotal(
+        autoPromotionSummary.totalAfterAutoPromotions,
+        discount
+      );
+      return {
+        subtotal: baseSubtotal,
+        discountAmount: autoPromotionSummary.autoPromotionDiscount + manual.discountAmount,
+        total: manual.total,
+        discountApplied: discount,
+      };
+    }
+
+    return applyDiscount(items, discount);
+  };
 
   const handleApplyCode = async () => {
     if (!promoCode.trim()) {
@@ -39,7 +70,7 @@ export function PromotionCodeInput({
       return;
     }
 
-    const result = applyDiscount(items, discount);
+    const result = buildDiscountResult(discount);
     setApplied(result);
     setSelectedDiscountId('');
     onDiscountChange(result);
@@ -53,7 +84,7 @@ export function PromotionCodeInput({
       return;
     }
 
-    const result = applyDiscount(items, discount);
+    const result = buildDiscountResult(discount);
     setApplied(result);
     setPromoCode('');
     onDiscountChange(result);
@@ -67,9 +98,25 @@ export function PromotionCodeInput({
     onDiscountChange(null);
   };
 
+  const displayTotal = applied?.total ?? autoPromotionSummary?.totalAfterAutoPromotions ?? baseSubtotal;
+
   return (
     <div className="space-y-3 border border-border rounded p-3">
       <p className="text-sm font-medium">Descuentos y promociones</p>
+
+      {autoPromotionSummary && autoPromotionSummary.appliedPromotions.length > 0 && !applied && (
+        <div className="text-xs space-y-1 bg-accent/10 rounded p-2">
+          <p className="font-medium">Promociones automáticas:</p>
+          {autoPromotionSummary.appliedPromotions.map(promotion => (
+            <p key={promotion}>- {promotion}</p>
+          ))}
+          {autoPromotionSummary.autoPromotionDiscount > 0 && (
+            <p className="text-green-600">
+              Ahorro promo: -${autoPromotionSummary.autoPromotionDiscount.toFixed(2)}
+            </p>
+          )}
+        </div>
+      )}
 
       {!applied ? (
         <>
@@ -118,6 +165,13 @@ export function PromotionCodeInput({
               Crea descuentos activos en Administración para aplicarlos directamente.
             </p>
           )}
+
+          {autoPromotionSummary && (
+            <div className="text-sm flex justify-between font-medium pt-1">
+              <span>Total con promos automáticas:</span>
+              <span>${displayTotal.toFixed(2)}</span>
+            </div>
+          )}
         </>
       ) : (
         <div className="text-sm space-y-1">
@@ -125,9 +179,20 @@ export function PromotionCodeInput({
             <span>Subtotal:</span>
             <span>${applied.subtotal.toFixed(2)}</span>
           </div>
+          {autoPromotionSummary && autoPromotionSummary.autoPromotionDiscount > 0 && (
+            <div className="flex justify-between text-green-600">
+              <span>Promos automáticas:</span>
+              <span>-${autoPromotionSummary.autoPromotionDiscount.toFixed(2)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-green-600">
             <span>Descuento ({applied.discountApplied.name}):</span>
-            <span>-${applied.discountAmount.toFixed(2)}</span>
+            <span>
+              -$
+              {(
+                applied.discountAmount - (autoPromotionSummary?.autoPromotionDiscount ?? 0)
+              ).toFixed(2)}
+            </span>
           </div>
           <div className="flex justify-between font-bold">
             <span>Total con descuento:</span>
@@ -138,7 +203,7 @@ export function PromotionCodeInput({
             onClick={handleClear}
             className="text-xs text-muted-foreground underline mt-1"
           >
-            Quitar descuento
+            Quitar descuento manual
           </button>
         </div>
       )}

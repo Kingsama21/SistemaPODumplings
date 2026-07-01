@@ -8,6 +8,7 @@ import { Input } from '../components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { descargarPDFCompras } from '../../services/compras-pdf.service';
+import { productBelongsToCategory } from '../../config/categories.config';
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -34,6 +35,8 @@ export default function Admin() {
     updatePromotion,
     deletePromotion,
     promotions,
+    autoPromotions,
+    updateAutoPromotion,
     deleteAllOrders,
     deleteAllCashTransactions,
   } = useApp();
@@ -68,7 +71,7 @@ export default function Admin() {
   // Agrupar productos por categoría
   const productsByCategory = categories.map(cat => ({
     category: cat,
-    products: products.filter(p => p.category === cat.name).sort((a, b) => a.name.localeCompare(b.name))
+    products: products.filter(p => productBelongsToCategory(p, cat.name)).sort((a, b) => a.name.localeCompare(b.name))
   })).filter(group => group.products.length > 0);
 
   // ============ COMPRAS ============
@@ -1011,7 +1014,44 @@ export default function Admin() {
 
         {/* PROMOCIONES */}
         {activeTab === 'promotions' && (
-          <div>
+          <div className="space-y-8">
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '1.25rem', fontWeight: 600 }} className="mb-2">
+                Promociones automáticas (Aniversario)
+              </h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Activa o desactiva las reglas que se aplican solas al cobrar una orden.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {autoPromotions.map(rule => (
+                  <div key={rule.id} className="bg-card border border-border rounded-lg p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="font-semibold">{rule.name}</h3>
+                        <p className="text-xs text-muted-foreground mt-1">{rule.id}</p>
+                      </div>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={rule.active}
+                          onChange={(e) => {
+                            updateAutoPromotion(rule.id, e.target.checked);
+                            toast.success(
+                              e.target.checked
+                                ? `${rule.name} activada`
+                                : `${rule.name} desactivada`
+                            );
+                          }}
+                        />
+                        {rule.active ? 'Activa' : 'Inactiva'}
+                      </label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
             <div className="flex justify-between items-center mb-6">
               <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '1.25rem', fontWeight: 600 }}>
                 Gestión de Promociones (Códigos)
@@ -1061,6 +1101,7 @@ export default function Admin() {
                   </div>
                 </div>
               ))}
+            </div>
             </div>
           </div>
         )}

@@ -1,15 +1,19 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useApp, Product, OrderItem, Order } from '../context/AppContext';
 import { ArrowLeft, Plus, Minus, ShoppingCart, Send, X, DollarSign, CreditCard, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { abrirParaImprimirPDF } from '../../services/ticket-pdf.service';
 import { PromotionCodeInput } from '../components/PromotionCodeInput';
+import { ComboVariantDialog } from '../components/ComboVariantDialog';
+import { filterProductsByCategory } from '../../config/categories.config';
+import { needsComboVariantSelector } from '../../config/inventory.config';
+import { calculateOrderPricing } from '../../services/auto-promotions.service';
 import type { DiscountResult } from '../../services/discount.service';
 
 export default function NewOrder() {
   const navigate = useNavigate();
-  const { products, categories, discounts, redeemPromotion, createOrder, addPendingDelivery } = useApp();
+  const { products, categories, discounts, autoPromotions, redeemPromotion, createOrder, addPendingDelivery } = useApp();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
@@ -31,6 +35,8 @@ export default function NewOrder() {
   const [processingPayment, setProcessingPayment] = useState(false);
   const [sendingToKitchen, setSendingToKitchen] = useState(false);
   const [discountResult, setDiscountResult] = useState<DiscountResult | null>(null);
+  const [pendingComboProduct, setPendingComboProduct] = useState<Product | null>(null);
+  const [showComboVariantDialog, setShowComboVariantDialog] = useState(false);
 
   const getCartWithComments = (): OrderItem[] =>
     cart.map(item => ({
@@ -39,12 +45,15 @@ export default function NewOrder() {
     }));
 
 
-  const filteredProducts = selectedCategory === 'all'
-    ? products
-    : products.filter(p => p.category === selectedCategory);
+  const filteredProducts = filterProductsByCategory(products, selectedCategory);
 
-  const addToCart = (product: Product) => {
-    const existingItem = cart.find(item => item.product.id === product.id);
+  const addToCart = (product: Product, variants?: OrderItem['variants']) => {
+    if (variants) {
+      setCart([...cart, { product, quantity: 1, variants }]);
+      return;
+    }
+
+    const existingItem = cart.find(item => item.product.id === product.id && !item.variants);
     if (existingItem) {
       setCart(cart.map(item =>
         item.product.id === product.id
@@ -71,7 +80,38 @@ export default function NewOrder() {
   };
 
   const total = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
-  const paymentTotal = discountResult?.total ?? total;
+
+  const orderPricing = useMemo(
+    () => calculateOrderPricing(cart, autoPromotions, products),
+    [cart, autoPromotions, products]
+  );
+
+  const autoPromotionSummary = {
+    subtotal: orderPricing.subtotal,
+    autoPromotionDiscount: orderPricing.autoPromotionDiscount,
+    totalAfterAutoPromotions: orderPricing.total,
+    appliedPromotions: orderPricing.appliedPromotions,
+  };
+
+  const paymentTotal = discountResult?.total ?? orderPricing.total;
+
+  const handleAddProduct = (product: Product) => {
+    if (needsComboVariantSelector(product)) {
+      setPendingComboProduct(product);
+      setShowComboVariantDialog(true);
+      return;
+    }
+
+    addToCart(product);
+  };
+
+  const handleConfirmComboVariants = (variants: OrderItem['variants']) => {
+    if (!pendingComboProduct) return;
+    addToCart(pendingComboProduct, variants);
+    toast.success(`${pendingComboProduct.name} agregado`);
+    setShowComboVariantDialog(false);
+    setPendingComboProduct(null);
+  };
 
   const handleSendToKitchen = async () => {
     if (cart.length === 0) {
@@ -177,11 +217,18 @@ export default function NewOrder() {
       console.log('createAndPrintOrder: Iniciando...');
       
       const cartWithComments = getCartWithComments();
-      const subtotal = cartWithComments.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
-      const orderTotal = discountResult?.total ?? subtotal;
+      const pricing = calculateOrderPricing(cartWithComments, autoPromotions, products);
+      const pricedItems = pricing.items.map((item, index) => {
+        if (item.product.price === 0) return item;
+        const source = cartWithComments[index];
+        return source
+          ? { ...item, comment: source.comment, variants: source.variants }
+          : item;
+      });
+      const orderTotal = discountResult?.total ?? pricing.total;
 
       const ordenId = await createOrder(
-        cartWithComments,
+        pricedItems,
         'delivery',
         paymentMethod,
         undefined,
@@ -210,9 +257,9 @@ export default function NewOrder() {
       // Crear objeto de la orden para generar ticket
       const orderObject: Order = {
         id: ordenId,
-        items: cartWithComments,
+        items: pricedItems,
         total: orderTotal,
-        originalTotal: discountResult ? subtotal : undefined,
+        originalTotal: pricing.subtotal,
         discountApplied: discountResult?.discountApplied,
         status: 'pending',
         timestamp: new Date(),
@@ -348,7 +395,7 @@ export default function NewOrder() {
             {filteredProducts.map(product => (
               <button
                 key={product.id}
-                onClick={() => addToCart(product)}
+                onClick={() => handleAddProduct(product)}
                 className="bg-card border border-border p-3 md:p-6 rounded hover:border-accent hover:shadow-lg transition-all text-left group"
               >
                 <div className="aspect-square bg-secondary rounded mb-2 md:mb-4 flex items-center justify-center text-2xl md:text-4xl group-hover:scale-105 transition-transform">
@@ -680,11 +727,12 @@ export default function NewOrder() {
                 discounts={discounts}
                 redeemPromotion={redeemPromotion}
                 onDiscountChange={setDiscountResult}
+                autoPromotionSummary={autoPromotionSummary}
               />
 
               <div className="bg-secondary p-4 rounded">
                 <p className="text-muted-foreground text-sm mb-2">Total a Pagar:</p>
-                {discountResult ? (
+                {discountResult || orderPricing.autoPromotionDiscount > 0 ? (
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground line-through">${total.toFixed(2)}</p>
                     <p className="text-3xl font-bold text-accent">${paymentTotal.toFixed(2)}</p>
@@ -813,6 +861,16 @@ export default function NewOrder() {
           </div>
         </div>
       )}
+
+      <ComboVariantDialog
+        product={pendingComboProduct}
+        open={showComboVariantDialog}
+        onConfirm={handleConfirmComboVariants}
+        onCancel={() => {
+          setShowComboVariantDialog(false);
+          setPendingComboProduct(null);
+        }}
+      />
     </div>
   );
 }

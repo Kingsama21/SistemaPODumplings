@@ -42,6 +42,20 @@ export function applyDiscount(items: DiscountableItem[], discount: Discount): Di
   return { subtotal, discountAmount, total, discountApplied: discount };
 }
 
+export function applyManualDiscountToTotal(
+  startingTotal: number,
+  discount: Discount
+): { discountAmount: number; total: number; discountApplied: Discount } {
+  const discountAmount =
+    discount.type === 'percentage'
+      ? Math.round(startingTotal * (discount.value / 100) * 100) / 100
+      : Math.min(discount.value, startingTotal);
+
+  const total = Math.max(0, Math.round((startingTotal - discountAmount) * 100) / 100);
+
+  return { discountAmount, total, discountApplied: discount };
+}
+
 export function formatDiscountLabel(discount: Discount): string {
   return discount.type === 'percentage' ? `${discount.value}%` : `$${discount.value}`;
 }

@@ -5,6 +5,23 @@ import * as ordenesService from '../../services/ordenes.service';
 import * as cajaService from '../../services/caja.service';
 import { abrirCajon } from '../../services/cajon.service';
 import { abrirParaImprimirEgresoPDF } from '../../services/ticket-pdf.service';
+import {
+  buildVariantComment,
+  type OrderItemVariants,
+} from '../../config/inventory.config';
+import { normalizeProductCategory } from '../../config/categories.config';
+import {
+  applyStockDeductions,
+  collectStockDeductions,
+  ensureSellableStockItems,
+} from '../../services/inventory.service';
+import {
+  loadAutoPromotions,
+  saveAutoPromotions,
+  type AutoPromotionRule,
+} from '../../services/auto-promotions.service';
+
+export type { OrderItemVariants };
 
 export interface Product {
   id: string;
@@ -55,6 +72,7 @@ export interface OrderItem {
   quantity: number;
   discount?: Discount; // Descuento aplicado a este item
   comment?: string;
+  variants?: OrderItemVariants;
 }
 
 export interface Order {
@@ -113,6 +131,7 @@ export interface TableOrderItem {
   timestamp: Date;
   status: 'pending' | 'sent' | 'cancelled'; // pending=no enviado, sent=enviado a cocina, cancelled=cancelado
   comment?: string;
+  variants?: OrderItemVariants;
 }
 
 export interface Table {
@@ -184,6 +203,8 @@ interface AppContextType {
   updatePromotion: (id: string, promotion: Partial<Promotion>) => Promise<void>;
   deletePromotion: (id: string) => Promise<void>;
   redeemPromotion: (code: string) => Promise<Discount | null>;
+  autoPromotions: AutoPromotionRule[];
+  updateAutoPromotion: (id: AutoPromotionRule['id'], active: boolean) => void;
   // Compras
   addCompra: (compra: Omit<Compra, 'id' | 'createdAt'>) => Promise<string>;
   updateCompra: (id: string, compra: Partial<Compra>) => Promise<void>;
@@ -191,7 +212,12 @@ interface AppContextType {
   getComprasByDateRange: (startDate: Date, endDate: Date) => Compra[];
   // Mesas (Sistema de mesas para local)
   tables: Table[];
-  addToTable: (tableNumber: number, product: Product, quantity: number) => void;
+  addToTable: (
+    tableNumber: number,
+    product: Product,
+    quantity: number,
+    options?: { variants?: OrderItemVariants; comment?: string }
+  ) => void;
   removeFromTable: (tableNumber: number, orderId: string) => void;
   getTableTotal: (tableNumber: number) => number;
   payTable: (
@@ -200,7 +226,8 @@ interface AppContextType {
     amountReceived?: number,
     tip?: number,
     discountApplied?: Discount,
-    finalTotal?: number
+    finalTotal?: number,
+    saleItems?: OrderItem[]
   ) => Promise<string>;
   clearTable: (tableNumber: number) => void;
   getTableOrders: (tableNumber: number) => TableOrderItem[];
@@ -216,7 +243,8 @@ interface AppContextType {
     amountReceived: number,
     change: number,
     discountApplied?: Discount,
-    finalTotal?: number
+    finalTotal?: number,
+    saleItems?: OrderItem[]
   ) => Promise<string>;
   getPendingDeliveryTotal: (deliveryId: string) => number;
 }
@@ -308,6 +336,23 @@ function normalizeDeliveryInfo(info: any): Order['deliveryInfo'] | undefined {
   return { customerName: customerName || '', phone: phone || '', address: address || '' };
 }
 
+function formatOrderItemComment(item: OrderItem): string | undefined {
+  const variantComment = buildVariantComment(item.variants);
+  const parts = [variantComment, item.comment?.trim()].filter(Boolean);
+  return parts.length > 0 ? parts.join(' | ') : undefined;
+}
+
+function mapOrderItemToProducto(item: OrderItem) {
+  const comment = formatOrderItemComment(item);
+  return {
+    id: item.product.id,
+    nombre: item.product.name,
+    precio: item.product.price,
+    cantidad: item.quantity,
+    ...(comment ? { comment } : {}),
+  };
+}
+
 function buildKitchenCommentPayload(
   items: { name: string; quantity: number; comment?: string }[]
 ): { kitchenNote?: string; itemComments?: Record<string, string> } {
@@ -335,12 +380,15 @@ function buildKitchenCommentPayload(
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Product[]>([]);
-  const [ingredients, setIngredients] = useState<Ingredient[]>(() => loadFromStorage(STORAGE_KEYS.INGREDIENTS, initialIngredients));
+  const [ingredients, setIngredients] = useState<Ingredient[]>(() =>
+    ensureSellableStockItems(loadFromStorage(STORAGE_KEYS.INGREDIENTS, initialIngredients))
+  );
   const [categories, setCategories] = useState<Category[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [cashTransactions, setCashTransactions] = useState<CashTransaction[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>(() => loadFromStorage(STORAGE_KEYS.DISCOUNTS, []));
   const [promotions, setPromotions] = useState<Promotion[]>(() => loadFromStorage(STORAGE_KEYS.PROMOTIONS, []));
+  const [autoPromotions, setAutoPromotions] = useState<AutoPromotionRule[]>(() => loadAutoPromotions());
   const [compras, setCompras] = useState<Compra[]>(() => loadFromStorage(STORAGE_KEYS.COMPRAS, []));
   // Inicializar 10 mesas vacías
   const [tables, setTables] = useState<Table[]>(() => {
@@ -371,7 +419,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             id: p.id,
             name: p.nombre,
             price: p.precio,
-            category: p.categoria,
+            category: normalizeProductCategory(p.categoria),
             image: p.imagen,
           } as Product));
         setProducts(products);
@@ -598,6 +646,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  useEffect(() => {
+    setIngredients(current => {
+      const merged = ensureSellableStockItems(current);
+      if (merged.length !== current.length) {
+        saveToStorage(STORAGE_KEYS.INGREDIENTS, merged);
+      }
+      return merged;
+    });
+  }, []);
+
+  // ============================================
+  // INVENTARIO EN VENTAS
+  // ============================================
+
+  const deductInventoryForOrder = (items: OrderItem[]) => {
+    const deductions = collectStockDeductions(items);
+    const { updated, missing } = applyStockDeductions(ingredients, deductions);
+
+    setIngredients(updated);
+    saveToStorage(STORAGE_KEYS.INGREDIENTS, updated);
+
+    if (missing.length > 0) {
+      console.warn('Stock no encontrado para:', missing.join(', '));
+    }
+  };
+
   // ============================================
   // FUNCIONES PARA ÓRDENES
   // ============================================
@@ -619,19 +693,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const subtotal = items.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
       const total = finalTotal ?? subtotal;
       
-      const productos = items.map(item => ({
-        id: item.product.id,
-        nombre: item.product.name,
-        precio: item.product.price,
-        cantidad: item.quantity,
-        ...(item.comment?.trim() ? { comment: item.comment.trim() } : {}),
-      }));
+      const productos = items.map(mapOrderItemToProducto);
 
       const { kitchenNote, itemComments } = buildKitchenCommentPayload(
         items.map(item => ({
           name: item.product.name,
           quantity: item.quantity,
-          comment: item.comment,
+          comment: formatOrderItemComment(item),
         }))
       );
 
@@ -673,6 +741,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (tip && tip > 0) {
         await cajaService.registrarPropina(tip, `Propina - Orden #${ordenId.slice(-4)}`, ordenId);
       }
+
+      deductInventoryForOrder(items);
 
       // Retornar el ID de la orden creada
       return ordenId;
@@ -953,6 +1023,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updateAutoPromotion = (id: AutoPromotionRule['id'], active: boolean) => {
+    const updated = autoPromotions.map(rule =>
+      rule.id === id ? { ...rule, active } : rule
+    );
+    setAutoPromotions(updated);
+    saveAutoPromotions(updated);
+  };
+
   // ============ COMPRAS ============
   const addCompra = async (compra: Omit<Compra, 'id' | 'createdAt'>): Promise<string> => {
     const newCompra: Compra = {
@@ -991,7 +1069,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // FUNCIONES DE MESAS
   // ============================================
 
-  const addToTable = (tableNumber: number, product: Product, quantity: number) => {
+  const addToTable = (
+    tableNumber: number,
+    product: Product,
+    quantity: number,
+    options?: { variants?: OrderItemVariants; comment?: string }
+  ) => {
+    const variantComment = buildVariantComment(options?.variants);
+    const comment = [variantComment, options?.comment?.trim()].filter(Boolean).join(' | ') || undefined;
+
     const updatedTables = tables.map(table => {
       if (table.number === tableNumber) {
         const newOrder: TableOrderItem = {
@@ -1000,6 +1086,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           quantity,
           timestamp: new Date(),
           status: 'pending',
+          ...(options?.variants ? { variants: options.variants } : {}),
+          ...(comment ? { comment } : {}),
         };
         const newOrders = [...table.orders, newOrder];
         const newTotal = newOrders
@@ -1064,7 +1152,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     amountReceived?: number,
     tip?: number,
     discountApplied?: Discount,
-    finalTotal?: number
+    finalTotal?: number,
+    saleItems?: OrderItem[]
   ): Promise<string> => {
     try {
       const table = tables.find(t => t.number === tableNumber);
@@ -1079,25 +1168,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
         throw new Error('No hay productos válidos para cobrar (todos cancelados)');
       }
 
-      const subtotal = validItems.reduce((sum, o) => sum + (o.product.price * o.quantity), 0);
-      const total = finalTotal ?? subtotal;
-
-      const items: OrderItem[] = validItems.map(o => ({
+      const baseItems: OrderItem[] = validItems.map(o => ({
         product: o.product,
         quantity: o.quantity,
+        comment: o.comment,
+        variants: o.variants,
       }));
+      const items = saleItems ?? baseItems;
+
+      const subtotal = baseItems.reduce((sum, o) => sum + (o.product.price * o.quantity), 0);
+      const total = finalTotal ?? subtotal;
 
       const change = amountReceived ? amountReceived - total : 0;
+
+      const { kitchenNote, itemComments } = buildKitchenCommentPayload(
+        items.map(item => ({
+          name: item.product.name,
+          quantity: item.quantity,
+          comment: formatOrderItemComment(item),
+        }))
+      );
 
       // Crear la orden
       const ordenId = await ordenesService.crearOrden(
         'local',
-        items.map(item => ({
-          id: item.product.id,
-          nombre: item.product.name,
-          precio: item.product.price,
-          cantidad: item.quantity,
-        })),
+        items.map(mapOrderItemToProducto),
         total,
         `Mesa ${tableNumber}`,
         undefined,
@@ -1106,8 +1201,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         change,
         tip,
         undefined,
-        undefined,
-        { forKitchen: false, initialStatus: 'completed' }
+        itemComments,
+        {
+          forKitchen: false,
+          initialStatus: 'completed',
+          ...(kitchenNote ? { kitchenNote } : {}),
+        }
       );
 
       await ordenesService.completeActiveKitchenOrdersForTable(`Mesa ${tableNumber}`);
@@ -1126,6 +1225,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (tip && tip > 0) {
         await cajaService.registrarPropina(tip, `Propina - Mesa #${tableNumber}`, ordenId);
       }
+
+      deductInventoryForOrder(items);
 
       return ordenId;
     } catch (error) {
@@ -1198,7 +1299,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const total = pendingItems.reduce((sum, o) => sum + (o.product.price * o.quantity), 0);
 
       const productos = pendingItems.map(o => {
-        const comment = comments?.[o.id]?.trim();
+        const extraComment = comments?.[o.id]?.trim();
+        const variantComment = buildVariantComment(o.variants);
+        const comment = [variantComment, extraComment, o.comment?.trim()].filter(Boolean).join(' | ') || undefined;
         return {
           id: o.product.id,
           nombre: o.product.name,
@@ -1209,11 +1312,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
 
       const { kitchenNote, itemComments } = buildKitchenCommentPayload(
-        pendingItems.map(item => ({
-          name: item.product.name,
-          quantity: item.quantity,
-          comment: comments?.[item.id],
-        }))
+        pendingItems.map(item => {
+          const extraComment = comments?.[item.id]?.trim();
+          const variantComment = buildVariantComment(item.variants);
+          const comment = [variantComment, extraComment, item.comment?.trim()].filter(Boolean).join(' | ') || undefined;
+          return {
+            name: item.product.name,
+            quantity: item.quantity,
+            comment,
+          };
+        })
       );
 
       const ordenId = await ordenesService.crearOrden(
@@ -1271,19 +1379,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     deliveryFee: number
   ): Promise<string> => {
     const total = items.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
-    const productos = items.map(item => ({
-      id: item.product.id,
-      nombre: item.product.name,
-      precio: item.product.price,
-      cantidad: item.quantity,
-      ...(item.comment?.trim() ? { comment: item.comment.trim() } : {}),
-    }));
+    const productos = items.map(mapOrderItemToProducto);
 
     const { kitchenNote, itemComments } = buildKitchenCommentPayload(
       items.map(item => ({
         name: item.product.name,
         quantity: item.quantity,
-        comment: item.comment,
+        comment: formatOrderItemComment(item),
       }))
     );
 
@@ -1323,7 +1425,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     amountReceived: number,
     change: number,
     discountApplied?: Discount,
-    finalTotal?: number
+    finalTotal?: number,
+    saleItems?: OrderItem[]
   ): Promise<string> => {
     try {
       const delivery = pendingDeliveries.find(d => d.id === deliveryId);
@@ -1332,6 +1435,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       const total = finalTotal ?? delivery.total;
+      const items = saleItems ?? delivery.items;
 
       await ordenesService.registrarPagoOrden(
         deliveryId,
@@ -1351,6 +1455,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deliveryId
       );
 
+      deductInventoryForOrder(items);
+
       return deliveryId;
     } catch (error) {
       console.error('Error pagando entrega:', error);
@@ -1368,6 +1474,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         cashTransactions,
         discounts,
         promotions,
+        autoPromotions,
         compras,
         addProduct,
         updateProduct,
@@ -1399,6 +1506,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updatePromotion,
         deletePromotion,
         redeemPromotion,
+        updateAutoPromotion,
         // Compras
         addCompra,
         updateCompra,

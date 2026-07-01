@@ -1,17 +1,20 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useApp } from '../context/AppContext';
 import { ArrowLeft, X, CreditCard, DollarSign, Bike } from 'lucide-react';
 import { toast } from 'sonner';
 import { abrirParaImprimirPDF } from '../../services/ticket-pdf.service';
 import { PromotionCodeInput } from '../components/PromotionCodeInput';
+import { calculateOrderPricing } from '../../services/auto-promotions.service';
 import type { DiscountResult } from '../../services/discount.service';
 
 export default function Deliveries() {
   const navigate = useNavigate();
   const {
     pendingDeliveries,
+    products,
     discounts,
+    autoPromotions,
     redeemPromotion,
     removePendingDelivery,
     payPendingDelivery,
@@ -26,6 +29,15 @@ export default function Deliveries() {
   const [processingPayment, setProcessingPayment] = useState(false);
   const [discountResult, setDiscountResult] = useState<DiscountResult | null>(null);
 
+  const selectedDeliveryData = selectedDelivery
+    ? pendingDeliveries.find(d => d.id === selectedDelivery)
+    : null;
+
+  const orderPricing = useMemo(() => {
+    if (!selectedDeliveryData) return null;
+    return calculateOrderPricing(selectedDeliveryData.items, autoPromotions, products);
+  }, [selectedDeliveryData, autoPromotions, products]);
+
   const handlePayDelivery = async () => {
     // Prevenir clics múltiples
     if (processingPayment) return;
@@ -36,13 +48,13 @@ export default function Deliveries() {
       return;
     }
 
-    const delivery = pendingDeliveries.find(d => d.id === selectedDelivery);
-    if (!delivery) {
+    const delivery = selectedDeliveryData;
+    if (!delivery || !orderPricing) {
       setProcessingPayment(false);
       return;
     }
 
-    const paymentTotal = discountResult?.total ?? delivery.total;
+    const paymentTotal = discountResult?.total ?? orderPricing.total;
     const received = paymentMethod === 'cash' ? parseFloat(amountReceived) : paymentTotal;
 
     if (paymentMethod === 'cash') {
@@ -68,14 +80,15 @@ export default function Deliveries() {
           received,
           calculatedChange,
           discountResult?.discountApplied,
-          paymentTotal
+          paymentTotal,
+          orderPricing.items
         );
 
         const orderObject = {
           id: ordenId,
-          items: delivery.items,
+          items: orderPricing.items,
           total: paymentTotal,
-          originalTotal: discountResult ? discountResult.subtotal : undefined,
+          originalTotal: orderPricing.subtotal,
           discountApplied: discountResult?.discountApplied,
           status: 'pending' as const,
           timestamp: new Date(),
@@ -117,14 +130,15 @@ export default function Deliveries() {
           paymentTotal,
           0,
           discountResult?.discountApplied,
-          paymentTotal
+          paymentTotal,
+          orderPricing.items
         );
 
         const orderObject = {
           id: ordenId,
-          items: delivery.items,
+          items: orderPricing.items,
           total: paymentTotal,
-          originalTotal: discountResult ? discountResult.subtotal : undefined,
+          originalTotal: orderPricing.subtotal,
           discountApplied: discountResult?.discountApplied,
           status: 'pending' as const,
           timestamp: new Date(),
@@ -230,11 +244,18 @@ export default function Deliveries() {
   }
 
   // Vista de Entrega Seleccionada
-  const delivery = pendingDeliveries.find(d => d.id === selectedDelivery);
-  if (!delivery) return null;
+  const delivery = selectedDeliveryData;
+  if (!delivery || !orderPricing) return null;
+
+  const autoPromotionSummary = {
+    subtotal: orderPricing.subtotal,
+    autoPromotionDiscount: orderPricing.autoPromotionDiscount,
+    totalAfterAutoPromotions: orderPricing.total,
+    appliedPromotions: orderPricing.appliedPromotions,
+  };
 
   const total = delivery.total;
-  const paymentTotal = discountResult?.total ?? total;
+  const paymentTotal = discountResult?.total ?? orderPricing.total;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -354,11 +375,12 @@ export default function Deliveries() {
                 discounts={discounts}
                 redeemPromotion={redeemPromotion}
                 onDiscountChange={setDiscountResult}
+                autoPromotionSummary={autoPromotionSummary}
               />
 
               <div className="bg-secondary p-4 rounded">
                 <p className="text-muted-foreground text-sm mb-2">Total a Pagar:</p>
-                {discountResult ? (
+                {discountResult || orderPricing.autoPromotionDiscount > 0 ? (
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground line-through">${total.toFixed(2)}</p>
                     <p className="text-3xl font-bold text-accent">${paymentTotal.toFixed(2)}</p>

@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { useApp } from '../context/AppContext';
+import { useApp, Product, OrderItem } from '../context/AppContext';
 import { ArrowLeft, Plus, Minus, X, CreditCard, DollarSign, ChefHat, ArrowRight, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { abrirParaImprimirPDF } from '../../services/ticket-pdf.service';
 import { PromotionCodeInput } from '../components/PromotionCodeInput';
+import { ComboVariantDialog } from '../components/ComboVariantDialog';
+import { filterProductsByCategory } from '../../config/categories.config';
+import { needsComboVariantSelector } from '../../config/inventory.config';
+import { calculateOrderPricing } from '../../services/auto-promotions.service';
 import type { DiscountResult } from '../../services/discount.service';
 
 export default function Tables() {
@@ -14,6 +18,7 @@ export default function Tables() {
     products,
     categories,
     discounts,
+    autoPromotions,
     redeemPromotion,
     addToTable,
     removeFromTable,
@@ -39,25 +44,57 @@ export default function Tables() {
   const [showCommentsDialog, setShowCommentsDialog] = useState(false);
   const [orderComments, setOrderComments] = useState<Record<string, string>>({});
   const [discountResult, setDiscountResult] = useState<DiscountResult | null>(null);
+  const [pendingComboProduct, setPendingComboProduct] = useState<Product | null>(null);
+  const [showComboVariantDialog, setShowComboVariantDialog] = useState(false);
 
-  const filteredProducts = selectedCategory === 'all'
-    ? products
-    : products.filter(p => p.category === selectedCategory);
+  const filteredProducts = filterProductsByCategory(products, selectedCategory);
 
   const tableData = selectedTable ? tables.find(t => t.number === selectedTable) : null;
   const tableOrders = selectedTable ? getTableOrders(selectedTable) : [];
   const pendingTableOrders = tableOrders.filter(order => order.status === 'pending');
   const tableTotal = selectedTable ? getTableTotal(selectedTable) : 0;
-  const payableItems = tableOrders
+  const payableItems: OrderItem[] = tableOrders
     .filter(order => order.status !== 'cancelled')
-    .map(order => ({ product: order.product, quantity: order.quantity }));
-  const paymentTotal = discountResult?.total ?? tableTotal;
+    .map(order => ({
+      product: order.product,
+      quantity: order.quantity,
+      comment: order.comment,
+      variants: order.variants,
+    }));
 
-  const handleAddProduct = (product) => {
-    if (selectedTable) {
-      addToTable(selectedTable, product, 1);
-      toast.success(`${product.name} agregado`);
+  const orderPricing = useMemo(
+    () => calculateOrderPricing(payableItems, autoPromotions, products),
+    [payableItems, autoPromotions, products]
+  );
+
+  const autoPromotionSummary = {
+    subtotal: orderPricing.subtotal,
+    autoPromotionDiscount: orderPricing.autoPromotionDiscount,
+    totalAfterAutoPromotions: orderPricing.total,
+    appliedPromotions: orderPricing.appliedPromotions,
+  };
+
+  const paymentTotal = discountResult?.total ?? orderPricing.total;
+
+  const handleAddProduct = (product: Product) => {
+    if (!selectedTable) return;
+
+    if (needsComboVariantSelector(product)) {
+      setPendingComboProduct(product);
+      setShowComboVariantDialog(true);
+      return;
     }
+
+    addToTable(selectedTable, product, 1);
+    toast.success(`${product.name} agregado`);
+  };
+
+  const handleConfirmComboVariants = (variants: OrderItem['variants']) => {
+    if (!selectedTable || !pendingComboProduct) return;
+    addToTable(selectedTable, pendingComboProduct, 1, { variants });
+    toast.success(`${pendingComboProduct.name} agregado`);
+    setShowComboVariantDialog(false);
+    setPendingComboProduct(null);
   };
 
   const handleSendToKitchen = () => {
@@ -122,14 +159,15 @@ export default function Tables() {
         received,
         tipAmount,
         discountResult?.discountApplied,
-        paymentTotal
+        paymentTotal,
+        orderPricing.items
       );
 
       const orderObject = {
         id: ordenId,
-        items: tableOrders,
+        items: orderPricing.items,
         total: paymentTotal,
-        originalTotal: discountResult ? discountResult.subtotal : undefined,
+        originalTotal: orderPricing.subtotal,
         discountApplied: discountResult?.discountApplied,
         status: 'pending' as const,
         timestamp: new Date(),
@@ -477,11 +515,12 @@ export default function Tables() {
                 discounts={discounts}
                 redeemPromotion={redeemPromotion}
                 onDiscountChange={setDiscountResult}
+                autoPromotionSummary={autoPromotionSummary}
               />
 
               <div className="bg-secondary p-4 rounded">
                 <p className="text-muted-foreground text-sm mb-2">Total a Pagar:</p>
-                {discountResult ? (
+                {discountResult || orderPricing.autoPromotionDiscount > 0 ? (
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground line-through">${tableTotal.toFixed(2)}</p>
                     <p className="text-3xl font-bold text-accent">${paymentTotal.toFixed(2)}</p>
@@ -720,6 +759,16 @@ export default function Tables() {
           </div>
         </div>
       )}
+
+      <ComboVariantDialog
+        product={pendingComboProduct}
+        open={showComboVariantDialog}
+        onConfirm={handleConfirmComboVariants}
+        onCancel={() => {
+          setShowComboVariantDialog(false);
+          setPendingComboProduct(null);
+        }}
+      />
     </div>
   );
 }
