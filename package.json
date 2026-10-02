@@ -1,14 +1,22 @@
 {
-  "name": "@figma/my-make-file",
+  "name": "isistema-comanda",
   "private": true,
-  "version": "0.0.1",
+  "version": "1.1.0",
+  "description": "Sistema de comanda Dumplings del Dragón",
+  "author": "Dumplings del Dragón",
   "type": "module",
+  "main": "electron/main.mjs",
   "scripts": {
     "build": "vite build",
     "dev": "vite",
     "server": "node server.js",
     "start:api": "node server.js",
-    "start": "node start-dev.mjs"
+    "start": "node start-dev.mjs",
+    "electron": "electron .",
+    "electron:dev": "pnpm build && electron .",
+    "electron:prepare": "node scripts/prepare-electron-app.mjs",
+    "icon:generate": "node scripts/generate-icon.mjs",
+    "dist:win": "pnpm icon:generate && pnpm build && node scripts/prepare-electron-app.mjs && electron-builder --projectDir=electron-app --win nsis --config.electronVersion=37.10.3"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -75,6 +83,9 @@
   "devDependencies": {
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
+    "electron": "^37.10.3",
+    "electron-builder": "^26.15.3",
+    "png-to-ico": "^3.0.2",
     "tailwindcss": "4.1.12",
     "vite": "6.3.5"
   },
@@ -93,6 +104,70 @@
   "pnpm": {
     "overrides": {
       "vite": "6.3.5"
+    },
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  },
+  "build": {
+    "appId": "com.dumplings.isistema-comanda",
+    "productName": "ISistema Comanda",
+    "copyright": "Copyright © Dumplings del Dragón",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "asar": true,
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
+    "icon": "build/icon.ico",
+    "extraMetadata": {
+      "main": "electron/main.mjs",
+      "dependencies": {
+        "cors": "^2.8.6",
+        "express": "^5.2.1"
+      }
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "server.js",
+      "network-urls.mjs",
+      "package.json",
+      "build/icon.ico"
+    ],
+    "extraResources": [
+      {
+        "from": "data.json",
+        "to": "data.json"
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "build/icon.ico"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ISistema Comanda",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
     }
   }
 }

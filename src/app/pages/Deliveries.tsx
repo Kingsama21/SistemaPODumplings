@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { useApp } from '../context/AppContext';
 import { ArrowLeft, X, CreditCard, DollarSign, Bike } from 'lucide-react';
 import { toast } from 'sonner';
-import { abrirParaImprimirPDF } from '../../services/ticket-pdf.service';
+import { printTicket } from '../../services/printing.service';
 import { PromotionCodeInput } from '../components/PromotionCodeInput';
 import { calculateOrderPricing } from '../../services/auto-promotions.service';
 import type { DiscountResult } from '../../services/discount.service';
@@ -108,7 +108,7 @@ export default function Deliveries() {
         toast.success('Entrega pagada ✓');
 
         // Imprimir ticket
-        await abrirParaImprimirPDF(orderObject);
+        await printTicket(orderObject);
 
         // Cerrar diálogos
         setShowPaymentDialog(false);
@@ -157,7 +157,7 @@ export default function Deliveries() {
 
         toast.success('Entrega pagada con tarjeta ✓');
 
-        await abrirParaImprimirPDF(orderObject);
+        await printTicket(orderObject);
 
         setShowPaymentDialog(false);
         setSelectedDelivery(null);

@@ -2,8 +2,9 @@ import { useNavigate } from 'react-router';
 import { useApp } from '../context/AppContext';
 import { ArrowLeft, CheckCircle, Edit2, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { abrirParaImprimirPDF } from '../../services/ticket-pdf.service';
+import { printTicket } from '../../services/printing.service';
 import { useState } from 'react';
+import logoTicket from '../../imports/descargar.png';
 
 export default function Tickets() {
   const navigate = useNavigate();
@@ -32,9 +33,9 @@ export default function Tickets() {
       console.log('handleComplete: Esperando 200ms antes de abrir PDF...');
       await new Promise(resolve => setTimeout(resolve, 200));
       
-      console.log('handleComplete: Llamando abrirParaImprimirPDF...');
-      await abrirParaImprimirPDF(order);
-      console.log('handleComplete: abrirParaImprimirPDF completado');
+      console.log('handleComplete: Imprimiendo ticket...');
+      await printTicket(order);
+      console.log('handleComplete: impresión solicitada');
     } catch (error) {
       console.error('ERROR en handleComplete:', error);
       toast.error('Error al completar la orden');
@@ -85,7 +86,7 @@ export default function Tickets() {
               <div key={order.id} className="bg-white p-8 max-w-sm mx-auto border border-gray-300 rounded shadow-lg" style={{ fontFamily: 'var(--font-sans)' }}>
                 {/* Logo */}
                 <div className="flex justify-center mb-4">
-                  <img src="/descargar.png" alt="Dumplings del Dragón" className="h-32 object-contain" />
+                  <img src={logoTicket} alt="Dumplings del Dragón" className="h-32 object-contain" />
                 </div>
 
                 {/* Título */}

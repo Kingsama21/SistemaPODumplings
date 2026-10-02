@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { useApp, Product, OrderItem } from '../context/AppContext';
 import { ArrowLeft, Plus, Minus, X, CreditCard, DollarSign, ChefHat, ArrowRight, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
-import { abrirParaImprimirPDF } from '../../services/ticket-pdf.service';
+import { printTicket } from '../../services/printing.service';
 import { PromotionCodeInput } from '../components/PromotionCodeInput';
 import { ComboVariantDialog } from '../components/ComboVariantDialog';
 import { filterProductsByCategory } from '../../config/categories.config';
@@ -185,7 +185,7 @@ export default function Tables() {
       clearTable(selectedTable);
       
       // Imprimir ticket
-      await abrirParaImprimirPDF(orderObject);
+      await printTicket(orderObject);
 
       // Cerrar diálogos
       setShowPaymentDialog(false);

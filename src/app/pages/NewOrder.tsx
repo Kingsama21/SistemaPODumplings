@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { useApp, Product, OrderItem, Order } from '../context/AppContext';
 import { ArrowLeft, Plus, Minus, ShoppingCart, Send, X, DollarSign, CreditCard, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
-import { abrirParaImprimirPDF } from '../../services/ticket-pdf.service';
+import { printTicket } from '../../services/printing.service';
 import { PromotionCodeInput } from '../components/PromotionCodeInput';
 import { ComboVariantDialog } from '../components/ComboVariantDialog';
 import { filterProductsByCategory } from '../../config/categories.config';
@@ -288,8 +288,8 @@ export default function NewOrder() {
       setPaymentMethod('cash');
 
       // IMPRIMIR TICKET INMEDIATAMENTE
-      console.log('createAndPrintOrder: Llamando a abrirParaImprimirPDF...');
-      await abrirParaImprimirPDF(orderObject);
+      console.log('createAndPrintOrder: Imprimiendo ticket...');
+      await printTicket(orderObject);
       console.log('createAndPrintOrder: Completado');
       
     } catch (error) {

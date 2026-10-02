@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useApp, Product, Ingredient, Category, Discount, Promotion, Compra } from '../context/AppContext';
-import { ArrowLeft, Plus, Edit2, Trash2, X, Save, Tag, Package, Percent, Ticket, AlertCircle, ShoppingCart, Download } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2, Trash2, X, Save, Tag, Package, Percent, Ticket, AlertCircle, ShoppingCart, Download, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { descargarPDFCompras } from '../../services/compras-pdf.service';
 import { productBelongsToCategory } from '../../config/categories.config';
+import PrinterSettingsPanel from '../components/PrinterSettingsPanel';
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -41,7 +42,7 @@ export default function Admin() {
     deleteAllCashTransactions,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'products' | 'ingredients' | 'discounts' | 'promotions' | 'categories' | 'catalog' | 'compras' | 'cleanup'>('catalog');
+  const [activeTab, setActiveTab] = useState<'products' | 'ingredients' | 'discounts' | 'promotions' | 'categories' | 'catalog' | 'compras' | 'cleanup' | 'printer'>('catalog');
 
   // ============ CATÁLOGO (Vista por categoría) ============
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
@@ -608,6 +609,7 @@ export default function Admin() {
             { id: 'discounts', label: 'Descuentos', icon: Percent },
             { id: 'promotions', label: 'Promociones', icon: Ticket },
             { id: 'categories', label: 'Categorías', icon: Tag },
+            { id: 'printer', label: 'Impresora', icon: Printer },
             { id: 'cleanup', label: 'Limpiar Datos', icon: Trash2 }
           ].map((tab) => (
             <button
@@ -1152,6 +1154,9 @@ export default function Admin() {
             </div>
           </div>
         )}
+
+        {/* IMPRESORA */}
+        {activeTab === 'printer' && <PrinterSettingsPanel />}
 
         {/* LIMPIAR DATOS */}
         {activeTab === 'cleanup' && (

@@ -4,7 +4,7 @@ import * as categoriasService from '../../services/categorias.service';
 import * as ordenesService from '../../services/ordenes.service';
 import * as cajaService from '../../services/caja.service';
 import { abrirCajon } from '../../services/cajon.service';
-import { abrirParaImprimirEgresoPDF } from '../../services/ticket-pdf.service';
+import { printEgreso } from '../../services/printing.service';
 import {
   buildVariantComment,
   type OrderItemVariants,
@@ -833,7 +833,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await cajaService.registrarEgreso(amount, description);
       // Abrir ticket de egreso para imprimir (esto abrirá la caja)
       setTimeout(() => {
-        abrirParaImprimirEgresoPDF(amount, description);
+        printEgreso(amount, description);
       }, 500);
     } catch (error) {
       console.error('Error registrando egreso:', error);
