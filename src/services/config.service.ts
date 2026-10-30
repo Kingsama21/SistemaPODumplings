@@ -1,4 +1,4 @@
-import { doc, onSnapshot, runTransaction, Unsubscribe } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, runTransaction, Unsubscribe } from 'firebase/firestore';
 import { db } from './firebase';
 
 /**
@@ -13,7 +13,8 @@ export type ConfigKey =
   | 'discounts'
   | 'promotions'
   | 'autoPromotions'
-  | 'compras';
+  | 'compras'
+  | 'waiters';
 
 /** Quita `undefined` (Firestore los rechaza) y convierte fechas a ISO. */
 function toPlain<T>(value: T): T {
@@ -77,4 +78,14 @@ export async function seedConfigIfMissing<T>(key: ConfigKey, items: T[]): Promis
       tx.set(ref, { items: toPlain(items) });
     }
   });
+}
+
+/**
+ * Lee una lista de configuración una sola vez (null si todavía no existe).
+ */
+export async function getConfigItems<T>(key: ConfigKey): Promise<T[] | null> {
+  const snapshot = await getDoc(doc(db, CONFIG_COLLECTION, key));
+  if (!snapshot.exists()) return null;
+  const items = snapshot.data().items;
+  return Array.isArray(items) ? (items as T[]) : [];
 }

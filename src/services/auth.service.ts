@@ -1,3 +1,5 @@
+import { getWaiters } from './waiters.service';
+
 export type UserRole = 'admin' | 'mesero';
 
 export interface UserProfile {
@@ -10,39 +12,13 @@ export interface UserProfile {
 
 const STORAGE_KEY = 'currentUser';
 
-// Usuarios predefinidos para el sistema local
-// Acceso por NOMBRE, no por email
-const DEMO_USERS = {
-  'carlos': {
-    email: 'carlos@example.com',
-    role: 'mesero' as UserRole,
-    passwordHash: '', // Sin contraseña
-  },
-  'alejandra': {
-    email: 'alejandra@example.com',
-    role: 'mesero' as UserRole,
-    passwordHash: '', // Sin contraseña
-  },
-  'alexis': {
-    email: 'alexis@example.com',
-    role: 'mesero' as UserRole,
-    passwordHash: '', // Sin contraseña
-  },
-  'admin': {
-    email: 'admin@example.com',
-    role: 'admin' as UserRole,
-    // La contraseña ya no vive en texto plano: se compara su hash SHA-256.
-    // Se puede cambiar definiendo VITE_ADMIN_PASSWORD_HASH en .env
-    passwordHash:
-      (import.meta.env.VITE_ADMIN_PASSWORD_HASH as string | undefined) ||
-      '0ce9ba359d689b47e8a26b10905b79597c549266fa1f9ec576e8161cadb377c6',
-  },
-};
-
-/** Nombres de los meseros (para mostrarlos como botones en el login). */
-export const WAITER_NAMES: string[] = Object.entries(DEMO_USERS)
-  .filter(([, user]) => user.role === 'mesero')
-  .map(([name]) => name);
+// El cajero/administrador es fijo; los meseros se administran desde Administración → Meseros
+const ADMIN_NAME = 'admin';
+// La contraseña no vive en texto plano: se compara su hash SHA-256.
+// Se puede cambiar definiendo VITE_ADMIN_PASSWORD_HASH en .env
+const ADMIN_PASSWORD_HASH =
+  (import.meta.env.VITE_ADMIN_PASSWORD_HASH as string | undefined) ||
+  '0ce9ba359d689b47e8a26b10905b79597c549266fa1f9ec576e8161cadb377c6';
 
 async function sha256Hex(text: string): Promise<string> {
   const data = new TextEncoder().encode(text);
@@ -52,9 +28,8 @@ async function sha256Hex(text: string): Promise<string> {
     .join('');
 }
 
-function roleForName(name: string): UserRole | null {
-  const key = Object.keys(DEMO_USERS).find(k => k.toLowerCase() === name.toLowerCase());
-  return key ? DEMO_USERS[key as keyof typeof DEMO_USERS].role : null;
+function roleForName(name: string): UserRole {
+  return name.toLowerCase() === ADMIN_NAME ? 'admin' : 'mesero';
 }
 
 /**
@@ -63,34 +38,34 @@ function roleForName(name: string): UserRole | null {
  */
 export async function loginUser(name: string, password: string): Promise<UserProfile> {
   try {
-    // Buscar por nombre (case-insensitive)
-    const nameKey = Object.keys(DEMO_USERS).find(
-      (key) => key.toLowerCase() === name.toLowerCase()
-    );
+    const typed = name.trim();
+    let displayName: string;
 
-    if (!nameKey) {
-      throw new Error('Usuario no encontrado');
+    if (typed.toLowerCase() === ADMIN_NAME) {
+      if (ADMIN_PASSWORD_HASH !== (await sha256Hex(password))) {
+        throw new Error('Contraseña incorrecta');
+      }
+      displayName = ADMIN_NAME;
+    } else {
+      // Los meseros se validan contra la lista guardada en Administración → Meseros
+      const waiters = await getWaiters();
+      const waiter = waiters.find(w => w.name.toLowerCase() === typed.toLowerCase());
+      if (!waiter) {
+        throw new Error('Ese mesero no está registrado');
+      }
+      displayName = waiter.name;
     }
 
-    const demoUser = DEMO_USERS[nameKey as keyof typeof DEMO_USERS];
-
-    // Validar contraseña si es requerida
-    if (demoUser.passwordHash && demoUser.passwordHash !== (await sha256Hex(password))) {
-      throw new Error('Contraseña incorrecta');
-    }
-
-    // Crear perfil de usuario
+    const role = roleForName(displayName);
     const userProfile: UserProfile = {
-      id: `user_${nameKey}`,
-      email: demoUser.email,
-      name: nameKey, // Usar el nombre como está configurado
-      role: demoUser.role,
+      id: `user_${displayName.toLowerCase().replace(/s+/g, '_')}`,
+      email: `${displayName.toLowerCase().replace(/s+/g, '.')}@example.com`,
+      name: displayName,
+      role,
       createdAt: new Date(),
     };
 
-    // Guardar en localStorage
     localStorage.setItem(STORAGE_KEY, JSON.stringify(userProfile));
-
     return userProfile;
   } catch (error) {
     console.error('Error en login:', error);
@@ -119,9 +94,7 @@ export function getCurrentUser(): UserProfile | null {
     if (!userStr) return null;
     const stored = JSON.parse(userStr) as UserProfile;
     // El rol siempre se deriva del nombre: editar el rol en localStorage no sirve
-    const role = roleForName(stored.name);
-    if (!role) return null;
-    return { ...stored, role };
+    return { ...stored, role: roleForName(stored.name) };
   } catch (error) {
     console.error('Error obteniendo usuario actual:', error);
     return null;

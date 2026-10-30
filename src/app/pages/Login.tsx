@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useUser } from '../context/UserContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -7,12 +7,15 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { AlertCircle } from 'lucide-react';
-import { WAITER_NAMES } from '../../services/auth.service';
+import { onWaitersChange, type Waiter } from '../../services/waiters.service';
 
 export default function Login() {
   const navigate = useNavigate();
   const { login } = useUser();
+  const [waiters, setWaiters] = useState<Waiter[] | null>(null);
   const [showCashier, setShowCashier] = useState(false);
+
+  useEffect(() => onWaitersChange(setWaiters), []);
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -57,16 +60,24 @@ export default function Login() {
           {!showCashier ? (
             <>
               <div className="space-y-3">
-                {WAITER_NAMES.map(name => (
+                {waiters === null && (
+                  <p className="text-center text-sm text-muted-foreground">Cargando meseros...</p>
+                )}
+                {waiters?.length === 0 && (
+                  <p className="text-center text-sm text-muted-foreground">
+                    Todavía no hay meseros registrados. Pide al cajero que los agregue.
+                  </p>
+                )}
+                {waiters?.map(waiter => (
                   <Button
-                    key={name}
+                    key={waiter.id}
                     type="button"
                     size="lg"
-                    className="w-full py-6 text-lg capitalize"
+                    className="w-full py-6 text-lg"
                     disabled={loading}
-                    onClick={() => void signIn(name)}
+                    onClick={() => void signIn(waiter.name)}
                   >
-                    {name}
+                    {waiter.name}
                   </Button>
                 ))}
               </div>
