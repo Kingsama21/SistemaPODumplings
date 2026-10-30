@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useApp } from '../context/AppContext';
-import { ArrowLeft, X, CreditCard, DollarSign, Bike } from 'lucide-react';
+import { ArrowLeft, X, CreditCard, DollarSign, Bike, MapPin, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { printTicket } from '../../services/printing.service';
 import { PromotionCodeInput } from '../components/PromotionCodeInput';
@@ -173,6 +173,19 @@ export default function Deliveries() {
     }
   };
 
+  // Reloj para el "hace X min" de cada entrega (se refresca cada minuto)
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Las más antiguas primero: son las que más urge cobrar/entregar
+  const sortedDeliveries = [...pendingDeliveries].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+  const pendingTotal = pendingDeliveries.reduce((sum, d) => sum + d.total, 0);
+
   // Vista de Entregas Pendientes (lista)
   if (!selectedDelivery) {
     return (
@@ -189,53 +202,112 @@ export default function Deliveries() {
               <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 600 }}>
                 Entregas Pendientes
               </h1>
+              {pendingDeliveries.length > 0 && (
+                <span className="px-2.5 py-0.5 rounded-full bg-accent text-accent-foreground text-sm font-bold">
+                  {pendingDeliveries.length}
+                </span>
+              )}
             </div>
           </div>
         </header>
 
-        <div className="flex-1 p-6 overflow-y-auto">
+        <div className="flex-1 p-4 md:p-6 overflow-y-auto">
           {pendingDeliveries.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Bike size={64} className="text-muted-foreground mb-4 opacity-50" />
-              <p className="text-muted-foreground text-lg">Sin entregas pendientes</p>
-              <p className="text-sm text-muted-foreground mt-2">Las órdenes de delivery aparecerán aquí</p>
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="w-24 h-24 rounded-full bg-secondary flex items-center justify-center mb-4">
+                <Bike size={44} className="text-muted-foreground" />
+              </div>
+              <p className="text-lg font-semibold">Todo entregado</p>
+              <p className="text-sm text-muted-foreground mt-1">Las órdenes de delivery sin pagar aparecerán aquí</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl">
-              {pendingDeliveries.map(delivery => (
-                <div
-                  key={delivery.id}
-                  onClick={() => setSelectedDelivery(delivery.id)}
-                  className="p-6 border border-border rounded-lg hover:border-accent hover:bg-secondary/50 transition-all cursor-pointer"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-lg">{delivery.customerName}</h3>
-                      <p className="text-sm text-muted-foreground">{delivery.phone}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold text-accent">
-                        ${delivery.total.toFixed(2)}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">+ ${delivery.deliveryFee}</p>
-                    </div>
-                  </div>
-
-                  <div className="mb-4 pb-4 border-t border-border pt-4">
-                    <p className="text-sm text-muted-foreground mb-1">📍 {delivery.address}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {delivery.items.length} {delivery.items.length === 1 ? 'artículo' : 'artículos'}
-                    </p>
-                  </div>
-
-                  <div className="text-xs text-muted-foreground">
-                    {new Date(delivery.createdAt).toLocaleTimeString('es-AR', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </div>
+            <div className="max-w-6xl">
+              {/* Resumen */}
+              <div className="grid grid-cols-2 gap-3 mb-5 max-w-md">
+                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
+                  <p className="text-xs text-muted-foreground">Por cobrar</p>
+                  <p className="text-2xl font-bold text-accent">${pendingTotal.toFixed(2)}</p>
                 </div>
-              ))}
+                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
+                  <p className="text-xs text-muted-foreground">Entregas</p>
+                  <p className="text-2xl font-bold">{pendingDeliveries.length}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {sortedDeliveries.map(delivery => {
+                  const minutes = Math.max(0, Math.floor((now - new Date(delivery.createdAt).getTime()) / 60000));
+                  const waitTone =
+                    minutes >= 60
+                      ? 'bg-red-100 text-red-700'
+                      : minutes >= 30
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-green-100 text-green-700';
+                  const waitLabel =
+                    minutes < 1 ? 'Ahora' : minutes < 60 ? `Hace ${minutes} min` : `Hace ${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+                  const itemNames = delivery.items.slice(0, 3).map(i => `${i.quantity}x ${i.product.name}`);
+                  const extra = delivery.items.length - itemNames.length;
+
+                  return (
+                    <div
+                      key={delivery.id}
+                      className="bg-card border border-border rounded-xl shadow-sm hover:shadow-md hover:border-accent transition-all overflow-hidden"
+                    >
+                      <button
+                        onClick={() => setSelectedDelivery(delivery.id)}
+                        className="w-full text-left p-4 active:bg-secondary/60"
+                      >
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="min-w-0">
+                            <h3 className="font-semibold text-lg truncate">{delivery.customerName}</h3>
+                            <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold ${waitTone}`}>
+                              {waitLabel}
+                            </span>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-2xl font-bold text-accent">${delivery.total.toFixed(2)}</p>
+                            {delivery.deliveryFee > 0 && (
+                              <p className="text-xs text-muted-foreground">+ ${delivery.deliveryFee} envío</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <p className="text-sm text-muted-foreground flex items-start gap-1.5 mb-2">
+                          <MapPin size={15} className="mt-0.5 shrink-0" />
+                          <span className="line-clamp-2">{delivery.address}</span>
+                        </p>
+                        <p className="text-xs text-muted-foreground line-clamp-2">
+                          {itemNames.join(' · ')}
+                          {extra > 0 ? ` · +${extra} más` : ''}
+                        </p>
+                      </button>
+
+                      <div className="grid grid-cols-3 border-t border-border text-sm font-semibold">
+                        <a
+                          href={`tel:${delivery.phone}`}
+                          className="py-3 flex items-center justify-center gap-1.5 hover:bg-secondary transition-colors"
+                        >
+                          <Phone size={15} /> Llamar
+                        </a>
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(delivery.address)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="py-3 flex items-center justify-center gap-1.5 border-x border-border hover:bg-secondary transition-colors"
+                        >
+                          <MapPin size={15} /> Mapa
+                        </a>
+                        <button
+                          onClick={() => setSelectedDelivery(delivery.id)}
+                          className="py-3 flex items-center justify-center gap-1.5 bg-accent text-accent-foreground hover:opacity-90 transition-opacity"
+                        >
+                          <DollarSign size={15} /> Cobrar
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -284,8 +356,25 @@ export default function Deliveries() {
             </div>
           </div>
 
-          <div className="bg-secondary p-3 rounded">
-            <p className="text-sm font-medium">📍 {delivery.address}</p>
+          <div className="bg-secondary p-3 rounded-xl flex items-center justify-between gap-3">
+            <p className="text-sm font-medium flex items-start gap-1.5">
+              <MapPin size={16} className="mt-0.5 shrink-0" />
+              {delivery.address}
+            </p>
+            <div className="flex gap-2 shrink-0">
+              <a href={`tel:${delivery.phone}`} className="p-2 rounded-full bg-card border border-border hover:border-accent" aria-label="Llamar">
+                <Phone size={16} />
+              </a>
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(delivery.address)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="p-2 rounded-full bg-card border border-border hover:border-accent"
+                aria-label="Ver en el mapa"
+              >
+                <MapPin size={16} />
+              </a>
+            </div>
           </div>
         </div>
       </header>
@@ -299,7 +388,7 @@ export default function Deliveries() {
             </h2>
             <div className="space-y-2">
               {delivery.items.map((item, idx) => (
-                <div key={idx} className="flex items-center justify-between p-3 bg-secondary rounded">
+                <div key={idx} className="flex items-center justify-between p-4 bg-card border border-border rounded-xl shadow-sm">
                   <div>
                     <p className="font-medium">{item.product.name}</p>
                     <p className="text-sm text-muted-foreground">x{item.quantity}</p>
@@ -311,7 +400,7 @@ export default function Deliveries() {
           </div>
 
           {/* Resumen */}
-          <div className="bg-secondary p-6 rounded-lg mb-6 space-y-3">
+          <div className="bg-secondary p-5 rounded-xl mb-6 space-y-3">
             <div className="flex justify-between">
               <p>Subtotal:</p>
               <p className="font-semibold">${total.toFixed(2)}</p>

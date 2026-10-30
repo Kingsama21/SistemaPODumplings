@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useApp, Product, OrderItem, Order } from '../context/AppContext';
-import { ArrowLeft, Plus, Minus, ShoppingCart, Send, X, DollarSign, CreditCard, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Plus, Minus, ShoppingCart, Send, X, DollarSign, CreditCard, MessageSquare, Search, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { printTicket } from '../../services/printing.service';
 import { PromotionCodeInput } from '../components/PromotionCodeInput';
@@ -18,6 +18,7 @@ export default function NewOrder() {
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
   const [showCart, setShowCart] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
   const [deliveryInfo, setDeliveryInfo] = useState({
     customerName: '',
     phone: '',
@@ -46,6 +47,20 @@ export default function NewOrder() {
 
 
   const filteredProducts = filterProductsByCategory(products, selectedCategory);
+
+  // Búsqueda sin importar acentos ni mayúsculas
+  const normalizeSearch = (text: string) =>
+    text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const visibleProducts = productSearch.trim()
+    ? filteredProducts.filter(p => normalizeSearch(p.name).includes(normalizeSearch(productSearch)))
+    : filteredProducts;
+
+  // Cuántas piezas de cada producto lleva el carrito (para la insignia en las tarjetas)
+  const quantityByProduct = new Map<string, number>();
+  cart.forEach(item => {
+    quantityByProduct.set(item.product.id, (quantityByProduct.get(item.product.id) ?? 0) + item.quantity);
+  });
+  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const addToCart = (product: Product, variants?: OrderItem['variants']) => {
     if (variants) {
@@ -302,7 +317,7 @@ export default function NewOrder() {
       {/* Header */}
       <header className="border-b border-border bg-card sticky top-0 z-10">
         <div className="px-4 md:px-6 py-3 md:py-4">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button
                 onClick={() => navigate('/')}
@@ -314,101 +329,129 @@ export default function NewOrder() {
                 Delivery
               </h1>
             </div>
-            <button
-              onClick={() => setShowCart(!showCart)}
-              className="lg:hidden p-2 hover:bg-secondary transition-colors rounded relative"
-            >
-              <ShoppingCart size={24} />
-              {cart.length > 0 && (
-                <span className="absolute top-1 right-1 bg-accent text-accent-foreground text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                  {cart.length}
-                </span>
-              )}
-            </button>
-          </div>
-
-          {/* Delivery Info Inputs */}
-          <div className="space-y-2">
-            <input
-              type="text"
-              placeholder="Nombre del cliente *"
-              value={deliveryInfo.customerName}
-              onChange={(e) => setDeliveryInfo({ ...deliveryInfo, customerName: e.target.value })}
-              className="w-full px-3 py-2 border border-border rounded bg-input text-sm"
-              style={{ fontFamily: 'var(--font-sans)' }}
-            />
-            <input
-              type="tel"
-              placeholder="Teléfono *"
-              value={deliveryInfo.phone}
-              onChange={(e) => setDeliveryInfo({ ...deliveryInfo, phone: e.target.value })}
-              className="w-full px-3 py-2 border border-border rounded bg-input text-sm"
-              style={{ fontFamily: 'var(--font-sans)' }}
-            />
-            <input
-              type="text"
-              placeholder="Dirección de entrega *"
-              value={deliveryInfo.address}
-              onChange={(e) => setDeliveryInfo({ ...deliveryInfo, address: e.target.value })}
-              className="w-full px-3 py-2 border border-border rounded bg-input text-sm"
-              style={{ fontFamily: 'var(--font-sans)' }}
-            />
           </div>
         </div>
       </header>
 
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Products Section */}
-        <div className="flex-1 p-3 md:p-6 flex flex-col overflow-hidden">
+        <div className="flex-1 p-3 md:p-6 overflow-y-auto pb-28 lg:pb-6">
+          {/* Datos del cliente */}
+          <div className="bg-card border border-border rounded-xl p-4 mb-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <User size={18} className="text-accent" />
+              <h2 style={{ fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: '0.95rem' }}>Datos del cliente</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <input
+                type="text"
+                placeholder="Nombre *"
+                value={deliveryInfo.customerName}
+                onChange={(e) => setDeliveryInfo({ ...deliveryInfo, customerName: e.target.value })}
+                className="w-full px-4 py-3 border border-border rounded-xl bg-input text-base focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                style={{ fontFamily: 'var(--font-sans)' }}
+              />
+              <input
+                type="tel"
+                inputMode="tel"
+                placeholder="Teléfono *"
+                value={deliveryInfo.phone}
+                onChange={(e) => setDeliveryInfo({ ...deliveryInfo, phone: e.target.value })}
+                className="w-full px-4 py-3 border border-border rounded-xl bg-input text-base focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                style={{ fontFamily: 'var(--font-sans)' }}
+              />
+              <input
+                type="text"
+                placeholder="Dirección de entrega *"
+                value={deliveryInfo.address}
+                onChange={(e) => setDeliveryInfo({ ...deliveryInfo, address: e.target.value })}
+                className="w-full px-4 py-3 border border-border rounded-xl bg-input text-base focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                style={{ fontFamily: 'var(--font-sans)' }}
+              />
+            </div>
+          </div>
+
           {/* Category Filter */}
-          <div className="flex gap-1.5 mb-4 overflow-x-auto pb-2 flex-shrink-0 scrollbar-hide">
-            <button
-              onClick={() => setSelectedCategory('all')}
-              className={`px-3 md:px-4 py-1.5 md:py-2 rounded whitespace-nowrap text-sm transition-all ${
-                selectedCategory === 'all'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-secondary text-secondary-foreground hover:bg-accent hover:text-accent-foreground'
-              }`}
-              style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}
-            >
-              Todo
-            </button>
-            {categories.map(cat => (
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {[{ id: 'all', name: 'all', label: 'Todo' }, ...categories.map(cat => ({ id: cat.id, name: cat.name, label: cat.name }))].map(cat => (
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.name)}
-                className={`px-3 md:px-4 py-1.5 md:py-2 rounded whitespace-nowrap text-sm transition-all ${
+                className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-semibold transition-all shrink-0 ${
                   selectedCategory === cat.name
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-secondary text-secondary-foreground hover:bg-accent hover:text-accent-foreground'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'bg-secondary text-secondary-foreground hover:bg-accent/20'
                 }`}
-                style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}
               >
-                {cat.name}
+                {cat.label}
               </button>
             ))}
           </div>
 
-          {/* Products Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-4 overflow-y-auto flex-1">
-            {filteredProducts.map(product => (
-              <button
-                key={product.id}
-                onClick={() => handleAddProduct(product)}
-                className="bg-card border border-border p-3 md:p-6 rounded hover:border-accent hover:shadow-lg transition-all text-left group"
-              >
-                <div className="aspect-square bg-secondary rounded mb-2 md:mb-4 flex items-center justify-center text-2xl md:text-4xl group-hover:scale-105 transition-transform">
-                  🥟
-                </div>
-                <h3 style={{ fontFamily: 'var(--font-sans)', fontWeight: 600, marginBottom: '0.25rem', fontSize: '0.875rem' }} className="md:text-base line-clamp-2">
-                  {product.name}
-                </h3>
-                <p className="text-accent md:text-lg" style={{ fontFamily: 'var(--font-sans)', fontSize: '0.875rem', fontWeight: 600 }}>
-                  ${product.price}
-                </p>
-              </button>
-            ))}
+          {/* Buscador */}
+          <div className="relative mb-4">
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="search"
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+              placeholder="Buscar en el menú..."
+              className="w-full pl-10 pr-4 py-3 rounded-xl border border-border bg-card text-base focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+              style={{ fontFamily: 'var(--font-sans)' }}
+            />
           </div>
+
+          {/* Products Grid */}
+          {visibleProducts.length === 0 ? (
+            <p className="text-center text-muted-foreground py-12">No se encontró ningún producto</p>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
+              {visibleProducts.map(product => {
+                const inCart = quantityByProduct.get(product.id) ?? 0;
+                return (
+                  <button
+                    key={product.id}
+                    onClick={() => handleAddProduct(product)}
+                    className={`relative p-4 min-h-[96px] flex flex-col justify-between rounded-xl border bg-card text-left shadow-sm transition-all active:scale-95 hover:shadow-md hover:-translate-y-0.5 ${
+                      inCart > 0 ? 'border-accent bg-accent/5' : 'border-border hover:border-accent'
+                    }`}
+                  >
+                    {inCart > 0 && (
+                      <span className="absolute -top-2 -right-2 min-w-6 h-6 px-1.5 rounded-full bg-accent text-accent-foreground text-xs font-bold flex items-center justify-center shadow">
+                        {inCart}
+                      </span>
+                    )}
+                    <p
+                      style={{ fontFamily: 'var(--font-sans)', fontSize: '0.9rem', fontWeight: 600, lineHeight: 1.25 }}
+                      className="line-clamp-2"
+                    >
+                      {product.name}
+                    </p>
+                    <div className="flex items-center justify-between mt-3">
+                      <span className="text-accent font-bold text-lg">${product.price}</span>
+                      <span className="w-8 h-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center">
+                        <Plus size={18} />
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Barra inferior (solo celular/tablet): abre el carrito */}
+        <div className="lg:hidden fixed bottom-0 inset-x-0 z-20 p-3 bg-card border-t border-border shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+          <button
+            onClick={() => setShowCart(true)}
+            className="w-full flex items-center justify-between gap-3 bg-accent text-accent-foreground rounded-xl px-5 py-4 font-bold active:scale-[0.99] transition-all"
+            style={{ fontFamily: 'var(--font-sans)' }}
+          >
+            <span>
+              Ver pedido · {cartCount} {cartCount === 1 ? 'artículo' : 'artículos'}
+            </span>
+            <span className="text-lg">${total}</span>
+          </button>
         </div>
 
         {/* Cart Section - Desktop */}
@@ -506,7 +549,7 @@ export default function NewOrder() {
         {/* Cart Drawer - Mobile */}
         {showCart && (
           <div className="lg:hidden fixed inset-0 bg-black/50 z-40" onClick={() => setShowCart(false)}>
-            <div className="fixed right-0 top-0 bottom-0 w-80 bg-card border-l border-border flex flex-col shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="fixed inset-x-0 bottom-0 top-16 bg-card rounded-t-2xl border-t border-border flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <div className="p-4 border-b border-border flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <ShoppingCart size={24} className="text-accent" />
