@@ -199,7 +199,9 @@ npm run type-check   # Verificar tipos TypeScript
 
 ## 🐛 Solución de Problemas
 
-Ver archivo `TROUBLESHOOTING.md` para problemas comunes.
+- **Los celulares no conectan:** reinstala con el instalador (abre el firewall solo) y verifica que estén en la misma WiFi.
+- **"Firebase no configurado":** falta el `.env` (ver `.env.example` y `FIREBASE_SETUP.md`).
+- **No imprime:** solo imprime dentro de la app de escritorio; revisa Administración → Impresora.
 
 ---
 
@@ -271,13 +273,15 @@ El login es local. La contraseña de admin se compara por hash SHA-256; para cam
 
 ## 📱 Meseros desde el celular
 
-La app de escritorio (Electron) ya sirve la interfaz en la red local (puerto 5173).
+Todo viene configurado desde el instalador; **nadie necesita tocar archivos ni comandos**.
 
-1. **Una sola vez**, en la laptop: ejecuta `abrir-puertos-firewall.bat` como administrador.
-2. Laptop y celulares en la **misma WiFi**. El celular también necesita internet (los datos viven en Firestore).
-3. En el Dashboard de la laptop (sesión admin) aparece la tarjeta **"Acceso para meseros"** con la dirección, por ejemplo `http://192.168.1.50:5173/login`. Los meseros la abren en el navegador del celular y entran con su nombre.
+1. **Instalar:** doble clic en `ISistema Comanda-Setup-X.Y.Z.exe` en la laptop. Windows pedirá permiso de administrador una vez; el instalador abre solo el acceso de red (firewall) y deja un ícono en el escritorio.
+2. **Abrir:** doble clic en el ícono **ISistema Comanda**. Solo se abre una ventana aunque se haga clic varias veces.
+3. **Meseros:** en el Dashboard del cajero aparece un **código QR**. El mesero conecta su celular al WiFi del restaurante, escanea el código con la cámara y toca su nombre.
 4. El mesero agrega productos a su mesa y pulsa **"Enviar al cajero"**. El pedido queda como *Por confirmar*.
 5. En la laptop suena un aviso y el Dashboard muestra un banner. El cajero abre la mesa y pulsa **"Confirmar y enviar a cocina"**; entonces aparece en la pantalla de Cocina.
 6. Los meseros no ven "Cobrar Mesa" ni Delivery: el cobro y la impresión siguen en la laptop.
 
-Si la IP de la laptop cambia (router), la tarjeta del Dashboard muestra la nueva. Conviene reservarle una IP fija en el router.
+Los celulares necesitan el WiFi del restaurante y que este tenga internet (los datos viven en Firestore). Si el router cambia la IP de la laptop, el QR del Dashboard se actualiza solo; lo ideal es reservarle una IP fija en el router.
+
+Para generar el instalador (solo el desarrollador): `pnpm dist:win` → queda en `release/`.

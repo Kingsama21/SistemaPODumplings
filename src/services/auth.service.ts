@@ -39,6 +39,11 @@ const DEMO_USERS = {
   },
 };
 
+/** Nombres de los meseros (para mostrarlos como botones en el login). */
+export const WAITER_NAMES: string[] = Object.entries(DEMO_USERS)
+  .filter(([, user]) => user.role === 'mesero')
+  .map(([name]) => name);
+
 async function sha256Hex(text: string): Promise<string> {
   const data = new TextEncoder().encode(text);
   const digest = await crypto.subtle.digest('SHA-256', data);

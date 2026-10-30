@@ -51,9 +51,15 @@ function main() {
     fs.copyFileSync(iconSrc, path.join(outDir, 'build', 'icon.ico'));
   }
 
+  const nsisSrc = path.join(root, 'build', 'installer.nsh');
+  if (fs.existsSync(nsisSrc)) {
+    fs.mkdirSync(path.join(outDir, 'build'), { recursive: true });
+    fs.copyFileSync(nsisSrc, path.join(outDir, 'build', 'installer.nsh'));
+  }
+
   const pkg = {
     name: 'isistema-comanda',
-    version: '1.1.0',
+    version: JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version,
     description: 'Sistema de comanda Dumplings del Dragón',
     author: 'Dumplings del Dragón',
     private: true,
@@ -106,8 +112,13 @@ function main() {
         artifactName: '${productName}-Setup-${version}.${ext}',
       },
       nsis: {
-        oneClick: false,
-        allowToChangeInstallationDirectory: true,
+        // Instalación de un solo clic, para todo el equipo (pide permiso de administrador una vez
+        // y abre el firewall automáticamente con build/installer.nsh)
+        oneClick: true,
+        perMachine: true,
+        runAfterFinish: true,
+        deleteAppDataOnUninstall: false,
+        include: 'build/installer.nsh',
         createDesktopShortcut: true,
         createStartMenuShortcut: true,
         shortcutName: 'ISistema Comanda',

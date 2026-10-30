@@ -4,6 +4,7 @@ import Logo from '../components/Logo';
 import { useApp } from '../context/AppContext';
 import { useUser } from '../context/UserContext';
 import { useEffect, useMemo, useState } from 'react';
+import QRCode from 'qrcode';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -22,6 +23,19 @@ export default function Dashboard() {
       .then((urls: string[]) => setNetworkUrls(urls))
       .catch(() => setNetworkUrls([]));
   }, []);
+
+  // Código QR de la dirección para que los meseros solo escaneen con la cámara
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const waiterUrl = networkUrls.find(u => /\/\/(192\.168|10\.|172\.(1[6-9]|2\d|3[01]))/.test(u)) ?? networkUrls[0];
+  useEffect(() => {
+    if (!waiterUrl) {
+      setQrDataUrl('');
+      return;
+    }
+    QRCode.toDataURL(waiterUrl, { width: 220, margin: 1 })
+      .then(setQrDataUrl)
+      .catch(() => setQrDataUrl(''));
+  }, [waiterUrl]);
 
   const reviewTables = tables.filter(t => t.orders.some(o => o.status === 'review'));
   
@@ -165,13 +179,19 @@ export default function Dashboard() {
                 Acceso para meseros (celular en la misma WiFi)
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              {networkUrls.map(url => (
-                <p key={url} className="font-mono text-sm select-all">{url}</p>
-              ))}
-              <p className="text-xs text-muted-foreground mt-1">
-                Los meseros abren esta dirección en el navegador del celular e inician sesión con su nombre.
-              </p>
+            <CardContent className="flex flex-col sm:flex-row items-center gap-6">
+              {qrDataUrl && (
+                <img src={qrDataUrl} alt="Código QR para meseros" width={160} height={160} className="rounded border border-border" />
+              )}
+              <div>
+                <p className="font-semibold">Para entrar desde el celular:</p>
+                <ol className="list-decimal ml-5 text-sm text-muted-foreground space-y-1 mt-1">
+                  <li>Conecta el celular al WiFi del restaurante.</li>
+                  <li>Abre la cámara y escanea este código.</li>
+                  <li>Elige tu nombre y entra.</li>
+                </ol>
+                <p className="font-mono text-xs mt-2 select-all text-muted-foreground">{waiterUrl}</p>
+              </div>
             </CardContent>
           </Card>
         )}

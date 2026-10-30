@@ -182,7 +182,21 @@ function registerPrintingIpc() {
   });
 }
 
+// Una sola ventana: si abren el programa dos veces, se trae al frente la que ya está abierta
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
 app.whenReady().then(() => {
+  if (!gotSingleInstanceLock) return;
   registerPrintingIpc();
   registerNetworkIpc();
   boot().catch((err) => {

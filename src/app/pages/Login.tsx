@@ -7,28 +7,32 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { AlertCircle } from 'lucide-react';
+import { WAITER_NAMES } from '../../services/auth.service';
 
 export default function Login() {
   const navigate = useNavigate();
   const { login } = useUser();
-  const [name, setName] = useState('');
+  const [showCashier, setShowCashier] = useState(false);
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const signIn = async (name: string, pass = '') => {
     setError('');
     setLoading(true);
-
     try {
-      await login(name, password);
+      await login(name, pass);
       navigate('/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al iniciar sesión');
+      setError(err instanceof Error ? err.message : 'No se pudo entrar');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCashierLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    void signIn('admin', password);
   };
 
   return (
@@ -38,62 +42,80 @@ export default function Login() {
           <CardTitle style={{ fontFamily: 'var(--font-serif)', fontSize: '2rem' }}>
             Dumplings del Dragón
           </CardTitle>
-          <p className="text-sm text-muted-foreground mt-2">Sistema de Punto de Venta</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            {showCashier ? 'Entrada del cajero' : '¿Quién eres?'}
+          </p>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleLogin} className="space-y-4">
-            {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
+        <CardContent className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-            <div className="space-y-2">
-              <Label htmlFor="name">Tu Nombre</Label>
-              <Input
-                id="name"
-                type="text"
-                placeholder="Ej: carlos, alejandra, admin"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
+          {!showCashier ? (
+            <>
+              <div className="space-y-3">
+                {WAITER_NAMES.map(name => (
+                  <Button
+                    key={name}
+                    type="button"
+                    size="lg"
+                    className="w-full py-6 text-lg capitalize"
+                    disabled={loading}
+                    onClick={() => void signIn(name)}
+                  >
+                    {name}
+                  </Button>
+                ))}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
                 disabled={loading}
-                autoFocus
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Contraseña (solo para Admin)</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onClick={() => {
+                  setError('');
+                  setShowCashier(true);
+                }}
+              >
+                Soy el cajero
+              </Button>
+            </>
+          ) : (
+            <form onSubmit={handleCashierLogin} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="password">Contraseña</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                  autoFocus
+                />
+              </div>
+              <Button type="submit" className="w-full py-3" size="lg" disabled={loading}>
+                {loading ? 'Entrando...' : 'Entrar'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
                 disabled={loading}
-              />
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full py-3"
-              disabled={loading}
-              size="lg"
-            >
-              {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
-            </Button>
-          </form>
-
-          <div className="mt-6 p-4 bg-secondary rounded-lg text-sm space-y-3 text-muted-foreground">
-            <div>
-              <p className="font-semibold mb-1">👤 Meseros (sin contraseña):</p>
-              <ul className="list-none space-y-1 ml-2">
-                <li>• carlos</li>
-                <li>• alexis</li>
-              </ul>
-            </div>
-          </div>
+                onClick={() => {
+                  setError('');
+                  setPassword('');
+                  setShowCashier(false);
+                }}
+              >
+                Volver
+              </Button>
+            </form>
+          )}
         </CardContent>
       </Card>
     </div>
