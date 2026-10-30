@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useApp } from '../context/AppContext';
-import { ArrowLeft, Plus, DollarSign, TrendingUp, TrendingDown, X, Save, CreditCard, Landmark, Trash2, FileText, Calendar } from 'lucide-react';
+import { ArrowLeft, Plus, DollarSign, TrendingUp, TrendingDown, X, Save, CreditCard, Landmark, Trash2, FileText, Calendar, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import * as corteCajaService from '../../services/corte-caja.service';
+import { descargarExcelVentasDia, parseDay } from '../../services/ventas-excel.service';
 
 export default function Cash() {
   const navigate = useNavigate();
-  const { orders, cashTransactions, addExpense, deleteCashTransactionsByDateRange, deleteCashTransactionsByOrderId } = useApp();
+  const { orders, cashTransactions, compras, addExpense, deleteCashTransactionsByDateRange, deleteCashTransactionsByOrderId } = useApp();
 
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showClearForm, setShowClearForm] = useState(false);
@@ -20,6 +21,26 @@ export default function Cash() {
     description: '',
   });
   const [filterDate, setFilterDate] = useState('');
+  const [exportingExcel, setExportingExcel] = useState(false);
+
+  // Excel del día elegido en el filtro (hoy si no hay fecha elegida)
+  const handleExportExcel = async () => {
+    try {
+      setExportingExcel(true);
+      const { sales } = await descargarExcelVentasDia({
+        day: parseDay(filterDate),
+        orders,
+        cashTransactions,
+        compras,
+      });
+      toast.success(`Excel generado con ${sales} venta${sales !== 1 ? 's' : ''}`);
+    } catch (error) {
+      console.error('Error al generar el Excel:', error);
+      toast.error('No se pudo generar el Excel');
+    } finally {
+      setExportingExcel(false);
+    }
+  };
   
   // Estados para Corte de Caja
   const [activeTab, setActiveTab] = useState<'transactions' | 'cut' | 'history'>('transactions');
@@ -387,7 +408,16 @@ export default function Cash() {
                   style={{ fontFamily: 'var(--font-sans)' }}
                 />
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap justify-end">
+                <button
+                  onClick={handleExportExcel}
+                  disabled={exportingExcel}
+                  className="bg-green-700 text-white px-6 py-2 rounded hover:bg-green-800 transition-colors flex items-center gap-2 disabled:opacity-60"
+                  style={{ fontFamily: 'var(--font-sans)' }}
+                >
+                  <FileSpreadsheet size={20} />
+                  {exportingExcel ? 'Generando...' : filterDate ? 'Excel del día' : 'Excel de hoy'}
+                </button>
                 {filterDate && (
                   <button
                     onClick={() => setFilterDate('')}

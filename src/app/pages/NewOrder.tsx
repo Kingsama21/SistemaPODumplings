@@ -372,7 +372,7 @@ export default function NewOrder() {
           </div>
 
           {/* Category Filter */}
-          <div className="flex gap-2 mb-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-2 [scrollbar-width:thin] [scrollbar-color:var(--accent)_transparent]" onWheel={(e) => { if (e.deltaY) e.currentTarget.scrollLeft += e.deltaY; }}>
             {[{ id: 'all', name: 'all', label: 'Todo' }, ...categories.map(cat => ({ id: cat.id, name: cat.name, label: cat.name }))].map(cat => (
               <button
                 key={cat.id}

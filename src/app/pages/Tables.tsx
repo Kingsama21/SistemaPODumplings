@@ -332,7 +332,7 @@ export default function Tables() {
           </div>
 
           {/* Category Filter */}
-          <div className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:thin] [scrollbar-color:var(--accent)_transparent]" onWheel={(e) => { if (e.deltaY) e.currentTarget.scrollLeft += e.deltaY; }}>
             <button
               onClick={() => setSelectedCategory('all')}
               className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-semibold transition-all shrink-0 ${
