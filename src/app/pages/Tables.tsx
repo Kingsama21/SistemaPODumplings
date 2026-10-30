@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useApp, Product, OrderItem } from '../context/AppContext';
-import { ArrowLeft, Plus, Minus, X, CreditCard, DollarSign, ChefHat, ArrowRight, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Plus, Minus, Search, X, CreditCard, DollarSign, ChefHat, ArrowRight, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { printTicket } from '../../services/printing.service';
 import { PromotionCodeInput } from '../components/PromotionCodeInput';
@@ -49,8 +49,17 @@ export default function Tables() {
   const [discountResult, setDiscountResult] = useState<DiscountResult | null>(null);
   const [pendingComboProduct, setPendingComboProduct] = useState<Product | null>(null);
   const [showComboVariantDialog, setShowComboVariantDialog] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  const [showOrderSheet, setShowOrderSheet] = useState(false);
 
   const filteredProducts = filterProductsByCategory(products, selectedCategory);
+
+  // Búsqueda sin importar acentos ni mayúsculas
+  const normalizeSearch = (text: string) =>
+    text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  const visibleProducts = productSearch.trim()
+    ? filteredProducts.filter(p => normalizeSearch(p.name).includes(normalizeSearch(productSearch)))
+    : filteredProducts;
 
   const tableData = selectedTable ? tables.find(t => t.number === selectedTable) : null;
   const tableOrders = selectedTable ? getTableOrders(selectedTable) : [];
@@ -60,6 +69,13 @@ export default function Tables() {
     isAdmin ? order.status === 'pending' || order.status === 'review' : order.status === 'pending'
   );
   const tableTotal = selectedTable ? getTableTotal(selectedTable) : 0;
+  // Cuántas piezas de cada producto lleva la mesa (para la insignia en las tarjetas)
+  const quantityByProduct = new Map<string, number>();
+  tableOrders
+    .filter(order => order.status !== 'cancelled')
+    .forEach(order => {
+      quantityByProduct.set(order.product.id, (quantityByProduct.get(order.product.id) ?? 0) + order.quantity);
+    });
   const payableItems: OrderItem[] = tableOrders
     .filter(order => order.status !== 'cancelled')
     .map(order => ({
@@ -252,8 +268,8 @@ export default function Tables() {
           </div>
         </header>
 
-        <div className="flex-1 p-6 flex items-center justify-center">
-          <div className="grid grid-cols-3 gap-6">
+        <div className="flex-1 p-4 md:p-6 flex items-center justify-center">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-6 w-full max-w-4xl">
             {tables.map(table => {
               const orders = getTableOrders(table.number);
               const total = getTableTotal(table.number);
@@ -264,13 +280,13 @@ export default function Tables() {
                 <button
                   key={table.number}
                   onClick={() => setSelectedTable(table.number)}
-                  className={`p-12 rounded-lg border-2 transition-all text-center ${
+                  className={`p-4 py-8 md:p-12 rounded-xl border-2 transition-all text-center shadow-sm active:scale-95 ${
                     isEmpty
                       ? 'border-border bg-secondary hover:border-accent hover:bg-secondary/80'
                       : 'border-accent bg-accent/10 hover:bg-accent/20'
                   }`}
                 >
-                  <div className="text-4xl font-bold mb-4">{table.number}</div>
+                  <div className="text-3xl md:text-4xl font-bold mb-2 md:mb-4">{table.number}</div>
                   {awaitingReview > 0 && (
                     <div className="inline-block mb-2 px-2 py-1 rounded bg-yellow-400 text-black text-xs font-bold animate-pulse">
                       {isAdmin ? `${awaitingReview} por confirmar` : 'Esperando al cajero'}
@@ -316,10 +332,10 @@ export default function Tables() {
           </div>
 
           {/* Category Filter */}
-          <div className="flex gap-2 overflow-x-auto pb-2">
+          <div className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button
               onClick={() => setSelectedCategory('all')}
-              className={`px-4 py-2 rounded whitespace-nowrap text-sm font-semibold transition-all ${
+              className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-semibold transition-all shrink-0 ${
                 selectedCategory === 'all'
                   ? 'bg-accent text-accent-foreground'
                   : 'bg-secondary text-secondary-foreground hover:bg-accent/20'
@@ -331,7 +347,7 @@ export default function Tables() {
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.name)}
-                className={`px-4 py-2 rounded whitespace-nowrap text-sm font-semibold transition-all ${
+                className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-semibold transition-all shrink-0 ${
                   selectedCategory === cat.name
                     ? 'bg-accent text-accent-foreground'
                     : 'bg-secondary text-secondary-foreground hover:bg-accent/20'
@@ -344,34 +360,100 @@ export default function Tables() {
         </div>
       </header>
 
-      <div className="flex-1 flex">
+      <div className="flex-1 flex flex-col md:flex-row">
         {/* Productos */}
-        <div className="flex-1 p-6 overflow-y-auto">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {filteredProducts.map(product => (
-              <button
-                key={product.id}
-                onClick={() => handleAddProduct(product)}
-                className="p-4 border border-border rounded hover:border-accent hover:bg-secondary transition-all text-left group"
-              >
-                <p style={{ fontFamily: 'var(--font-sans)', fontSize: '0.875rem', fontWeight: 600 }} className="line-clamp-2 mb-2 group-hover:text-accent">
-                  {product.name}
-                </p>
-                <p className="text-accent font-bold">${product.price}</p>
-              </button>
-            ))}
+        <div className="flex-1 p-3 md:p-6 overflow-y-auto pb-28 md:pb-6">
+          <div className="relative mb-4">
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="search"
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+              placeholder="Buscar en el menú..."
+              className="w-full pl-10 pr-4 py-3 rounded-xl border border-border bg-card text-base focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+              style={{ fontFamily: 'var(--font-sans)' }}
+            />
           </div>
+
+          {visibleProducts.length === 0 ? (
+            <p className="text-center text-muted-foreground py-12">No se encontró ningún producto</p>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
+              {visibleProducts.map(product => {
+                const inTable = quantityByProduct.get(product.id) ?? 0;
+                return (
+                  <button
+                    key={product.id}
+                    onClick={() => handleAddProduct(product)}
+                    className={`relative p-4 min-h-[96px] flex flex-col justify-between rounded-xl border bg-card text-left shadow-sm transition-all active:scale-95 hover:shadow-md hover:-translate-y-0.5 ${
+                      inTable > 0 ? 'border-accent bg-accent/5' : 'border-border hover:border-accent'
+                    }`}
+                  >
+                    {inTable > 0 && (
+                      <span className="absolute -top-2 -right-2 min-w-6 h-6 px-1.5 rounded-full bg-accent text-accent-foreground text-xs font-bold flex items-center justify-center shadow">
+                        {inTable}
+                      </span>
+                    )}
+                    <p
+                      style={{ fontFamily: 'var(--font-sans)', fontSize: '0.9rem', fontWeight: 600, lineHeight: 1.25 }}
+                      className="line-clamp-2"
+                    >
+                      {product.name}
+                    </p>
+                    <div className="flex items-center justify-between mt-3">
+                      <span className="text-accent font-bold text-lg">${product.price}</span>
+                      <span className="w-8 h-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center">
+                        <Plus size={18} />
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Órdenes de la Mesa */}
-        <div className="w-80 bg-card border-l border-border flex flex-col">
-          <div className="p-4 border-b border-border">
-            <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.125rem', fontWeight: 600 }}>
-              Órdenes
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {tableOrders.length} {tableOrders.length === 1 ? 'artículo' : 'artículos'}
-            </p>
+        {/* Barra inferior (solo celular): abre el pedido de la mesa */}
+        <div className="md:hidden fixed bottom-0 inset-x-0 z-20 p-3 bg-card border-t border-border shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+          <button
+            onClick={() => setShowOrderSheet(true)}
+            className="w-full flex items-center justify-between gap-3 bg-accent text-accent-foreground rounded-xl px-5 py-4 font-bold active:scale-[0.99] transition-all"
+            style={{ fontFamily: 'var(--font-sans)' }}
+          >
+            <span>
+              Ver pedido · {tableOrders.filter(o => o.status !== 'cancelled').length}{' '}
+              {tableOrders.filter(o => o.status !== 'cancelled').length === 1 ? 'artículo' : 'artículos'}
+            </span>
+            <span className="text-lg">${tableTotal.toFixed(2)}</span>
+          </button>
+        </div>
+
+        {showOrderSheet && (
+          <div className="md:hidden fixed inset-0 z-30 bg-black/50" onClick={() => setShowOrderSheet(false)} />
+        )}
+
+        {/* Órdenes de la Mesa: panel lateral en pantallas grandes, hoja inferior en celular */}
+        <div
+          className={`bg-card border-border flex flex-col fixed inset-x-0 bottom-0 top-16 z-40 rounded-t-2xl border-t shadow-2xl transition-transform duration-300 md:static md:z-auto md:w-80 md:rounded-none md:border-t-0 md:border-l md:shadow-none md:translate-y-0 ${
+            showOrderSheet ? 'translate-y-0' : 'translate-y-full'
+          }`}
+        >
+          <div className="p-4 border-b border-border flex items-start justify-between">
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.125rem', fontWeight: 600 }}>
+                Mesa {selectedTable} · Órdenes
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                {tableOrders.length} {tableOrders.length === 1 ? 'artículo' : 'artículos'}
+              </p>
+            </div>
+            <button
+              onClick={() => setShowOrderSheet(false)}
+              className="md:hidden p-2 -m-2 rounded hover:bg-secondary"
+              aria-label="Cerrar pedido"
+            >
+              <X size={24} />
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -527,7 +609,7 @@ export default function Tables() {
       {/* Payment Dialog */}
       {showPaymentDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card border border-border rounded-lg p-8 w-96 shadow-lg max-h-[90vh] overflow-y-auto">
+          <div className="bg-card border border-border rounded-lg p-6 md:p-8 w-96 max-w-[95vw] shadow-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', fontWeight: 600 }}>
                 Pago Mesa {selectedTable}
