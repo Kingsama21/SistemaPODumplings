@@ -15,6 +15,7 @@ interface ElectronAPI {
   getPrinterSettings: () => Promise<unknown>;
   setPrinterSettings: (partial: unknown) => Promise<unknown>;
   getPrintStatus: () => Promise<unknown>;
+  openKitchenWindow?: () => Promise<{ reused: boolean; externalDisplay: boolean }>;
   printTicket: (order: unknown, options?: unknown) => Promise<PrintResult>;
   printEgreso: (payload: unknown, options?: unknown) => Promise<PrintResult>;
   openCashDrawer: (options?: unknown) => Promise<PrintResult>;

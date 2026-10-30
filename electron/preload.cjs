@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
+  openKitchenWindow: () => ipcRenderer.invoke('kitchen:open'),
   getNetworkUrls: () => ipcRenderer.invoke('network:get-urls'),
   getPrinters: () => ipcRenderer.invoke('printing:get-printers'),
   getPrinterSettings: () => ipcRenderer.invoke('printing:get-settings'),

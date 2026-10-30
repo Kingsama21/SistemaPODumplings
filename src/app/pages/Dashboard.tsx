@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import { Link, useNavigate } from 'react-router';
 import { Plus, ClipboardList, ChefHat, Receipt, Settings, DollarSign, TrendingUp, AlertCircle, Package, History, Bike, LogOut } from 'lucide-react';
 import Logo from '../components/Logo';
@@ -325,6 +326,21 @@ export default function Dashboard() {
               <Link
                 key={item.to}
                 to={item.to}
+                onClick={(e) => {
+                  // En la app de escritorio, Cocina se abre en su propia ventana (y en el TV si hay uno conectado)
+                  if (item.to === '/cocina' && window.electronAPI?.openKitchenWindow) {
+                    e.preventDefault();
+                    window.electronAPI.openKitchenWindow().then(result => {
+                      toast.success(
+                        result.reused
+                          ? 'La cocina ya estaba abierta'
+                          : result.externalDisplay
+                          ? 'Cocina abierta en la segunda pantalla'
+                          : 'Cocina abierta en otra ventana: arrástrala al TV'
+                      );
+                    });
+                  }
+                }}
                 className={`${item.color} p-6 transition-all hover:scale-105 hover:shadow-xl group relative overflow-hidden rounded-lg`}
                 style={{
                   fontFamily: 'var(--font-sans)',

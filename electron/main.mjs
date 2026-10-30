@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, screen } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,8 @@ const PORT = Number(process.env.ELECTRON_PORT) || 5173;
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
+/** @type {BrowserWindow | null} */
+let kitchenWindow = null;
 /** @type {import('http').Server | null} */
 let httpServer = null;
 
@@ -97,6 +99,50 @@ function createWindow() {
   });
 }
 
+/**
+ * Ventana de cocina: misma app (comparte sesión, Firestore y caché), solo una ventana más.
+ * Si hay un segundo monitor/TV conectado se abre ahí a pantalla completa.
+ */
+function openKitchenWindow() {
+  if (kitchenWindow && !kitchenWindow.isDestroyed()) {
+    if (kitchenWindow.isMinimized()) kitchenWindow.restore();
+    kitchenWindow.focus();
+    return { reused: true, externalDisplay: false };
+  }
+
+  const mainBounds = mainWindow?.getBounds();
+  const primaryId = mainBounds
+    ? screen.getDisplayMatching(mainBounds).id
+    : screen.getPrimaryDisplay().id;
+  const external = screen.getAllDisplays().find((d) => d.id !== primaryId);
+  const icon = resolveAppIcon();
+
+  kitchenWindow = new BrowserWindow({
+    width: 1280,
+    height: 720,
+    ...(external ? { x: external.bounds.x, y: external.bounds.y } : {}),
+    autoHideMenuBar: true,
+    title: 'Cocina - Dumplings',
+    ...(icon ? { icon } : {}),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  if (external) kitchenWindow.setFullScreen(true);
+
+  const baseUrl = process.env.ELECTRON_START_URL || `http://127.0.0.1:${PORT}`;
+  kitchenWindow.loadURL(`${baseUrl}/cocina`);
+  kitchenWindow.on('closed', () => {
+    kitchenWindow = null;
+  });
+
+  return { reused: false, externalDisplay: Boolean(external) };
+}
+
 async function waitForHealth(url, attempts = 40) {
   for (let i = 0; i < attempts; i += 1) {
     try {
@@ -136,6 +182,7 @@ async function boot() {
 }
 
 function registerNetworkIpc() {
+  ipcMain.handle('kitchen:open', async () => openKitchenWindow());
   // URLs que los meseros abren en su celular (misma red WiFi)
   ipcMain.handle('network:get-urls', async () =>
     getLocalIPv4Addresses().map((ip) => `http://${ip}:${PORT}/login`)
