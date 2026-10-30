@@ -25,6 +25,7 @@ export default function Cash() {
   const [activeTab, setActiveTab] = useState<'transactions' | 'cut' | 'history'>('transactions');
   const [showCutDialog, setShowCutDialog] = useState(false);
   const [countedAmount, setCountedAmount] = useState('');
+  const [openingFloatInput, setOpeningFloatInput] = useState('');
   const [cutNotes, setCutNotes] = useState('');
   const [cortes, setCortes] = useState<corteCajaService.CorteCaja[]>([]);
   const [loadingCortes, setLoadingCortes] = useState(false);
@@ -68,7 +69,6 @@ export default function Cash() {
       });
       const totalAmount = orderTransactions.reduce((sum, t) => sum + t.amount, 0);
       
-      console.log('Debug Order:', { ordenId, order, transactionCount: orderTransactions.length, transactions: orderTransactions });
       
       return {
         id: ordenId,
@@ -208,15 +208,21 @@ export default function Cash() {
   };
 
   // Funciones para Corte de Caja
+  // Inicio del periodo abierto: el último corte de hoy "congela" los movimientos
+  // anteriores; si no hay corte hoy, el periodo empieza a las 00:00.
+  const getCutPeriodStart = () => {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const lastCutToday = cortes
+      .map(c => new Date(c.endTime))
+      .filter(end => end.getTime() >= startOfDay.getTime())
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+    return lastCutToday ?? startOfDay;
+  };
+
   const getTodayTransactions = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    return cashTransactions.filter(t => {
-      const transactionDate = new Date(t.timestamp);
-      transactionDate.setHours(0, 0, 0, 0);
-      return transactionDate.getTime() === today.getTime();
-    });
+    const periodStart = getCutPeriodStart().getTime();
+    return cashTransactions.filter(t => new Date(t.timestamp).getTime() > periodStart);
   };
 
   const calculateCutSummary = () => {
@@ -246,8 +252,15 @@ export default function Cash() {
       .filter(t => t.type === 'tip')
       .reduce((sum, t) => sum + t.amount, 0);
 
-    // El total teórico incluye ingresos + propinas (ya que las propinas son en efectivo)
-    const theoreticalTotal = cashPayments + cardPayments + transferPayments + totalTips;
+    // Solo las propinas en efectivo están físicamente en la caja
+    const cashTips = todayTransactions
+      .filter(t => t.type === 'tip' && (t.paymentMethod ?? 'cash') === 'cash')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const openingFloat = Math.max(0, parseFloat(openingFloatInput) || 0);
+
+    // Efectivo esperado en caja = fondo + ventas en efectivo + propinas en efectivo - egresos
+    const theoreticalTotal = openingFloat + cashPayments + cashTips - totalExpense;
 
     return {
       totalIncome,
@@ -256,6 +269,8 @@ export default function Cash() {
       cardPayments,
       transferPayments,
       totalTips,
+      cashTips,
+      openingFloat,
       theoreticalTotal,
     };
   };
@@ -272,14 +287,13 @@ export default function Cash() {
 
     try {
       const today = new Date();
-      const startOfDay = new Date(today);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(today);
-      endOfDay.setHours(23, 59, 59, 999);
 
       const cutId = await corteCajaService.crearCorteCaja({
         date: today,
-        startTime: startOfDay,
+        startTime: getCutPeriodStart(),
+        openingFloat: summary.openingFloat,
+        tips: summary.cashTips,
+        salesTotal: summary.totalIncome,
         endTime: new Date(),
         totalIncome: summary.totalIncome,
         totalExpense: summary.totalExpense,
@@ -295,8 +309,9 @@ export default function Cash() {
       toast.success(`Corte de caja realizado. Diferencia: ${difference >= 0 ? '+' : ''}$${difference.toFixed(2)}`);
       setShowCutDialog(false);
       setCountedAmount('');
+      setOpeningFloatInput('');
       setCutNotes('');
-      
+
       // Recargar cortes
       const allCortes = await corteCajaService.getAllCortes();
       setCortes(allCortes);
@@ -648,8 +663,27 @@ export default function Cash() {
                       </div>
 
                       <div className="border-t border-border pt-6">
+                        <div className="mb-4">
+                          <label className="block mb-2 text-sm" style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}>
+                            Fondo inicial de caja
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="0.00"
+                            value={openingFloatInput}
+                            onChange={(e) => setOpeningFloatInput(e.target.value)}
+                            className="w-full md:w-60 px-4 py-2 border border-border rounded bg-input text-right"
+                            style={{ fontFamily: 'var(--font-sans)' }}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Periodo desde {getCutPeriodStart().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}.
+                          Propinas en efectivo: ${summary.cashTips.toFixed(2)}
+                        </p>
                         <p style={{ fontFamily: 'var(--font-sans)', fontSize: '0.875rem', color: '#666', marginBottom: '0.5rem' }}>
-                          TOTAL TEÓRICO (efectivo + tarjeta + transferencia):
+                          EFECTIVO ESPERADO EN CAJA (fondo + efectivo + propinas en efectivo − egresos):
                         </p>
                         <p style={{ fontFamily: 'var(--font-sans)', fontSize: '1.875rem', fontWeight: 700, color: '#000' }}>
                           ${summary.theoreticalTotal.toFixed(2)}
@@ -693,8 +727,8 @@ export default function Cash() {
                               </p>
                               <p className="text-xs mt-2" style={{ color: difference === 0 ? '#166534' : difference > 0 ? '#92400e' : '#7f1d1d' }}>
                                 {difference === 0 && '✓ Cuadra perfectamente'}
-                                {difference > 0 && `Falta registrar -$${difference.toFixed(2)}`}
-                                {difference < 0 && `Exceso de -$${Math.abs(difference).toFixed(2)}`}
+                                {difference > 0 && `Sobran $${difference.toFixed(2)} en caja`}
+                                {difference < 0 && `Faltan $${Math.abs(difference).toFixed(2)} en caja`}
                               </p>
                             </div>
                           );
@@ -1075,6 +1109,26 @@ export default function Cash() {
             </p>
 
             <div className="space-y-4">
+              <div>
+                <label className="block mb-2" style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}>
+                  Fondo inicial de caja
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={openingFloatInput}
+                  onChange={(e) => setOpeningFloatInput(e.target.value)}
+                  className="w-full px-4 py-3 border border-border rounded bg-input text-right"
+                  style={{ fontFamily: 'var(--font-sans)' }}
+                />
+              </div>
+
+              <p className="text-sm" style={{ fontFamily: 'var(--font-sans)' }}>
+                Efectivo esperado: <strong>${calculateCutSummary().theoreticalTotal.toFixed(2)}</strong>
+              </p>
+
               <div>
                 <label className="block mb-2" style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}>
                   Monto Contado *

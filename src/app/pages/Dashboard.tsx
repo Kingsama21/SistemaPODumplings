@@ -3,16 +3,27 @@ import { Plus, ClipboardList, ChefHat, Receipt, Settings, DollarSign, TrendingUp
 import Logo from '../components/Logo';
 import { useApp } from '../context/AppContext';
 import { useUser } from '../context/UserContext';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { isSaleOrder } from '../../services/sales';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 export default function Dashboard() {
-  const { orders, products, cashTransactions, getLowStockIngredients } = useApp();
+  const { orders, products, cashTransactions, getLowStockIngredients, tables } = useApp();
   const { user, logout, isAdmin, isMesero } = useUser();
   const navigate = useNavigate();
+  const [networkUrls, setNetworkUrls] = useState<string[]>([]);
+
+  useEffect(() => {
+    // Solo existe dentro de la app de escritorio (Electron)
+    window.electronAPI?.getNetworkUrls?.()
+      .then((urls: string[]) => setNetworkUrls(urls))
+      .catch(() => setNetworkUrls([]));
+  }, []);
+
+  const reviewTables = tables.filter(t => t.orders.some(o => o.status === 'review'));
   
   const handleLogout = async () => {
     await logout();
@@ -28,16 +39,17 @@ export default function Dashboard() {
       const orderDate = new Date(o.timestamp ?? o.createdAt ?? new Date());
       return orderDate.getTime() >= today.getTime();
     });
-    const completedOrders = todayOrders.filter(o => o.status === 'completed');
     const pendingOrders = todayOrders.filter(o => o.status === 'pending' || o.status === 'preparing');
-    
-    // Calcular total de TODAS las órdenes del día (no solo completadas)
-    const totalSales = todayOrders.reduce((sum, o) => sum + (o.total || 0), 0);
-    const totalOrders = todayOrders.length;
-    
+
+    // Solo ventas cobradas: las comandas de cocina duplicarían el total
+    const saleOrders = todayOrders.filter(isSaleOrder);
+    const completedOrders = saleOrders.filter(o => o.status === 'completed');
+    const totalSales = saleOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const totalOrders = saleOrders.length;
+
     // Productos más vendidos
     const productSales = new Map<string, { name: string; quantity: number; revenue: number }>();
-    todayOrders.forEach(order => {
+    saleOrders.forEach(order => {
       if (order.items && order.items.length > 0) {
         order.items.forEach(item => {
           const product = item.product || (typeof item === 'object' && 'id' in item ? item : null);
@@ -65,7 +77,7 @@ export default function Dashboard() {
       orders: 0,
     }));
     
-    todayOrders.forEach(order => {
+    saleOrders.forEach(order => {
       const hour = new Date(order.timestamp).getHours();
       hourlyData[hour].orders += 1;
     });
@@ -130,6 +142,40 @@ export default function Dashboard() {
 
       {/* Main content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-12">
+        {/* Pedidos de meseros esperando confirmación del cajero */}
+        {isAdmin && reviewTables.length > 0 && (
+          <Link
+            to="/mesas"
+            className="block mb-6 p-4 rounded-lg border-2 border-yellow-400 bg-yellow-50 animate-pulse"
+          >
+            <p className="font-bold">
+              {reviewTables.length === 1 ? '1 mesa tiene' : `${reviewTables.length} mesas tienen`} pedidos por confirmar
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Mesas: {reviewTables.map(t => t.number).join(', ')} — toca para revisarlas y enviarlas a cocina
+            </p>
+          </Link>
+        )}
+
+        {/* Acceso para meseros desde el celular - Solo para Admin con la app de escritorio */}
+        {isAdmin && networkUrls.length > 0 && (
+          <Card className="mb-6">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Acceso para meseros (celular en la misma WiFi)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {networkUrls.map(url => (
+                <p key={url} className="font-mono text-sm select-all">{url}</p>
+              ))}
+              <p className="text-xs text-muted-foreground mt-1">
+                Los meseros abren esta dirección en el navegador del celular e inician sesión con su nombre.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Estadísticas del día - Solo para Admin */}
         {isAdmin && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

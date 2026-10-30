@@ -3,6 +3,7 @@ import {
   addDoc,
   updateDoc,
   getDocs,
+  getDoc,
   doc,
   query,
   orderBy,
@@ -421,4 +422,44 @@ export async function deleteAllOrders(): Promise<number> {
     console.error('Error eliminando todas las órdenes:', error);
     throw error;
   }
+}
+
+/**
+ * Elimina una orden (usado para revertir una venta cuyo registro en caja falló)
+ */
+export async function deleteOrden(ordenId: string): Promise<void> {
+  await deleteDoc(doc(db, ORDERS_COLLECTION, ordenId));
+}
+
+/**
+ * Indica si una orden ya fue cobrada (evita doble cobro desde otro dispositivo)
+ */
+export async function isOrdenPagada(ordenId: string): Promise<boolean> {
+  const snap = await getDoc(doc(db, ORDERS_COLLECTION, ordenId));
+  if (!snap.exists()) return false;
+  return snap.data().paymentPending === false;
+}
+
+/**
+ * Corrige el método de pago de una orden ya registrada
+ */
+export async function actualizarMetodoPagoOrden(
+  ordenId: string,
+  paymentMethod: 'cash' | 'card' | 'transfer'
+): Promise<void> {
+  await updateDoc(doc(db, ORDERS_COLLECTION, ordenId), {
+    paymentMethod,
+    metodoPago: paymentMethod,
+    updatedAt: new Date(),
+  });
+}
+
+/**
+ * Deja una orden de nuevo como "pago pendiente" (si falló el registro en caja)
+ */
+export async function revertirPagoOrden(ordenId: string): Promise<void> {
+  await updateDoc(doc(db, ORDERS_COLLECTION, ordenId), {
+    paymentPending: true,
+    updatedAt: new Date(),
+  });
 }

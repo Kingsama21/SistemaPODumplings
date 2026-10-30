@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
+  getNetworkUrls: () => ipcRenderer.invoke('network:get-urls'),
   getPrinters: () => ipcRenderer.invoke('printing:get-printers'),
   getPrinterSettings: () => ipcRenderer.invoke('printing:get-settings'),
   setPrinterSettings: (partial) => ipcRenderer.invoke('printing:set-settings', partial),

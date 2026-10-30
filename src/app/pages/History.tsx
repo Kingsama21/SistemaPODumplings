@@ -4,6 +4,7 @@ import { useApp } from "../context/AppContext";
 import { ArrowLeft, DollarSign, Package, TrendingUp, ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
+import { isSaleOrder } from "../../services/sales";
 
 export default function History() {
   const navigate = useNavigate();
@@ -12,8 +13,8 @@ export default function History() {
   const [expandedOrderId, setExpandedOrderId] = useState(null);
 
   const filteredOrders = useMemo(() => {
-    // Mostrar todas las órdenes excepto canceladas (para ver historial completo del día)
-    const allOrders = orders.filter((o) => o.status !== 'cancelled');
+    // Solo ventas cobradas (excluye comandas de cocina y entregas sin pagar)
+    const allOrders = orders.filter(isSaleOrder);
     const now = new Date();
     let dateStart = new Date();
     

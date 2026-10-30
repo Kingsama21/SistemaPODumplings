@@ -11,7 +11,7 @@
 ## ✨ Características Principales
 
 ### 🪑 Sistema de Mesas (Local)
-- **9 mesas fijas** en grid 3x3
+- **10 mesas** en grid 3x3, compartidas en tiempo real entre dispositivos (colección `mesas` de Firestore)
 - Visualización de órdenes por mesa con total en tiempo real
 - Acumulación de productos sin necesidad de pagar inmediatamente
 - Botón "Enviar a Cocina" para pasar órdenes a preparación
@@ -42,7 +42,7 @@
 - Registro automático de todos los ingresos
 - Desglose por tipo de pago (efectivo/tarjeta)
 - Historial completo de transacciones
-- Cortes de caja
+- Cortes de caja: efectivo esperado = fondo + ventas en efectivo + propinas en efectivo − egresos; cada corte cubre solo lo posterior al corte anterior
 
 ### 📋 Cocina
 - Vista de órdenes pendientes por mesa
@@ -244,3 +244,40 @@ Proyecto desarrollado para Dumplings Restaurant.
 **Versión**: 1.0.0  
 **Última actualización**: Mayo 2026
   
+---
+
+## 🏗️ Arquitectura de datos
+
+| Dato | Dónde vive |
+|------|-----------|
+| Productos, categorías, órdenes, caja, cortes | Firestore (`productos`, `categorias`, `ordenes`, `caja`, `corte_caja`) |
+| Mesas abiertas | Firestore (`mesas/mesa_N`), en tiempo real |
+| Inventario, descuentos, promociones, promociones automáticas, compras | Firestore (`config/{ingredients,discounts,promotions,autoPromotions,compras}`), modificados con transacciones |
+| Sesión del usuario | `localStorage` (por equipo) |
+| Ajustes de impresora | `userData/printer-settings.json` (Electron) |
+
+Al primer arranque, si `config/*` no existe, se siembra con lo que haya en `localStorage` del equipo (migración automática). Haz ese primer arranque desde el equipo que tenga los datos buenos.
+
+### Reglas de Firestore
+La app **no usa Firebase Auth**, así que las reglas no pueden depender de `request.auth`. Las colecciones `productos`, `categorias`, `ordenes`, `caja`, `corte_caja`, `mesas` y `config` deben permitir lectura/escritura al cliente. Restringe el acceso a nivel de red/proyecto, o migra a Firebase Auth para endurecerlo.
+
+### Ventas vs. comandas
+Cada mesa genera una *comanda* (`forKitchen: true`) al enviar a cocina y una *orden de venta* al cobrar. Solo las órdenes de venta cuentan en Historial y Dashboard (`src/services/sales.ts`).
+
+### Seguridad
+El login es local. La contraseña de admin se compara por hash SHA-256; para cambiarla define `VITE_ADMIN_PASSWORD_HASH` en `.env`. No es seguridad real contra un usuario con acceso al navegador.
+
+---
+
+## 📱 Meseros desde el celular
+
+La app de escritorio (Electron) ya sirve la interfaz en la red local (puerto 5173).
+
+1. **Una sola vez**, en la laptop: ejecuta `abrir-puertos-firewall.bat` como administrador.
+2. Laptop y celulares en la **misma WiFi**. El celular también necesita internet (los datos viven en Firestore).
+3. En el Dashboard de la laptop (sesión admin) aparece la tarjeta **"Acceso para meseros"** con la dirección, por ejemplo `http://192.168.1.50:5173/login`. Los meseros la abren en el navegador del celular y entran con su nombre.
+4. El mesero agrega productos a su mesa y pulsa **"Enviar al cajero"**. El pedido queda como *Por confirmar*.
+5. En la laptop suena un aviso y el Dashboard muestra un banner. El cajero abre la mesa y pulsa **"Confirmar y enviar a cocina"**; entonces aparece en la pantalla de Cocina.
+6. Los meseros no ven "Cobrar Mesa" ni Delivery: el cobro y la impresión siguen en la laptop.
+
+Si la IP de la laptop cambia (router), la tarjeta del Dashboard muestra la nueva. Conviene reservarle una IP fija en el router.

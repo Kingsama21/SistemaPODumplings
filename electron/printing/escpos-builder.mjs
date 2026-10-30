@@ -143,7 +143,7 @@ export function buildOrderTicketBytes(order, options = {}) {
   bold(false);
 
   if (order.orderType === 'local' && order.tableNumber) {
-    textLn(`Mesa ${order.tableNumber}`);
+    textLn(/^mesa\b/i.test(String(order.tableNumber)) ? String(order.tableNumber) : `Mesa ${order.tableNumber}`);
   }
 
   if (order.orderType === 'delivery' && order.deliveryInfo) {

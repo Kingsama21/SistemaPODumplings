@@ -1,7 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
-import { getDatabase, Database } from 'firebase/database';
 
 // ============================================
 // CONFIGURACIÓN FIREBASE
@@ -31,8 +30,5 @@ export const auth: Auth = getAuth(app);
 
 // Inicializar Firestore
 export const db: Firestore = getFirestore(app);
-
-// Inicializar Realtime Database
-export const rtdb: Database = getDatabase(app);
 
 export default app;

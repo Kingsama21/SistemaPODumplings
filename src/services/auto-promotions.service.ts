@@ -182,3 +182,13 @@ export function calculateOrderPricing(
     appliedPromotions,
   };
 }
+
+/**
+ * Combina las reglas guardadas con las reglas por defecto (por si se agregan reglas nuevas).
+ */
+export function mergeAutoPromotions(saved: AutoPromotionRule[]): AutoPromotionRule[] {
+  return DEFAULT_AUTO_PROMOTIONS.map(defaultRule => {
+    const match = saved.find(rule => rule.id === defaultRule.id);
+    return match ? { ...defaultRule, active: match.active } : defaultRule;
+  });
+}

@@ -54,10 +54,12 @@ export interface Orden {
 
 export interface MovimientoCaja {
   id: string;
-  tipo: 'ingreso' | 'egreso';
-  monto: number;
-  motivo: string;
+  type: 'income' | 'expense' | 'tip';
+  amount: number;
+  description: string;
+  paymentMethod?: 'cash' | 'card' | 'transfer';
   ordenId?: string;
+  timestamp?: Date;
   createdAt: Date;
 }
 

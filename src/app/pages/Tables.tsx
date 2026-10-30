@@ -10,6 +10,7 @@ import { filterProductsByCategory } from '../../config/categories.config';
 import { needsComboVariantSelector } from '../../config/inventory.config';
 import { calculateOrderPricing } from '../../services/auto-promotions.service';
 import type { DiscountResult } from '../../services/discount.service';
+import { useUser } from '../context/UserContext';
 
 export default function Tables() {
   const navigate = useNavigate();
@@ -27,8 +28,10 @@ export default function Tables() {
     payTable,
     clearTable,
     sendTableOrderToKitchen,
+    submitTableForReview,
     moveTableOrders,
   } = useApp();
+  const { isAdmin } = useUser();
   
   const [selectedTable, setSelectedTable] = useState<number | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -51,7 +54,11 @@ export default function Tables() {
 
   const tableData = selectedTable ? tables.find(t => t.number === selectedTable) : null;
   const tableOrders = selectedTable ? getTableOrders(selectedTable) : [];
-  const pendingTableOrders = tableOrders.filter(order => order.status === 'pending');
+  // Mesero: manda al cajero lo que está sin enviar. Cajero: confirma lo del mesero y lo suyo.
+  const reviewTableOrders = tableOrders.filter(order => order.status === 'review');
+  const pendingTableOrders = tableOrders.filter(order =>
+    isAdmin ? order.status === 'pending' || order.status === 'review' : order.status === 'pending'
+  );
   const tableTotal = selectedTable ? getTableTotal(selectedTable) : 0;
   const payableItems: OrderItem[] = tableOrders
     .filter(order => order.status !== 'cancelled')
@@ -113,8 +120,13 @@ export default function Tables() {
 
     setSendingToKitchen(true);
     try {
-      await sendTableOrderToKitchen(selectedTable, orderComments);
-      toast.success('Comanda enviada a cocina ✓');
+      if (isAdmin) {
+        await sendTableOrderToKitchen(selectedTable, orderComments);
+        toast.success('Comanda enviada a cocina ✓');
+      } else {
+        submitTableForReview(selectedTable, orderComments);
+        toast.success('Pedido enviado al cajero ✓');
+      }
       setShowCommentsDialog(false);
       setOrderComments({});
     } catch (error) {
@@ -172,7 +184,7 @@ export default function Tables() {
         status: 'pending' as const,
         timestamp: new Date(),
         orderType: 'local' as const,
-        paymentMethod: 'cash' as const,
+        paymentMethod,
         tableNumber: `Mesa ${selectedTable}`,
         amountReceived: received,
         change: calculatedChange,
@@ -246,6 +258,7 @@ export default function Tables() {
               const orders = getTableOrders(table.number);
               const total = getTableTotal(table.number);
               const isEmpty = orders.length === 0;
+              const awaitingReview = orders.filter(o => o.status === 'review').length;
 
               return (
                 <button
@@ -258,6 +271,11 @@ export default function Tables() {
                   }`}
                 >
                   <div className="text-4xl font-bold mb-4">{table.number}</div>
+                  {awaitingReview > 0 && (
+                    <div className="inline-block mb-2 px-2 py-1 rounded bg-yellow-400 text-black text-xs font-bold animate-pulse">
+                      {isAdmin ? `${awaitingReview} por confirmar` : 'Esperando al cajero'}
+                    </div>
+                  )}
                   <div className="text-base text-muted-foreground mb-3">
                     {orders.length} {orders.length === 1 ? 'orden' : 'órdenes'}
                   </div>
@@ -370,6 +388,8 @@ export default function Tables() {
                       ? 'border-red-300 bg-red-50 opacity-60'
                       : order.status === 'sent'
                       ? 'border-blue-300 bg-blue-50'
+                      : order.status === 'review'
+                      ? 'border-yellow-400 bg-yellow-50'
                       : 'border-border'
                   }`}
                 >
@@ -388,6 +408,9 @@ export default function Tables() {
                       </h4>
                       {order.status === 'sent' && (
                         <p className="text-xs text-blue-600 font-medium">En cocina</p>
+                      )}
+                      {order.status === 'review' && (
+                        <p className="text-xs text-yellow-700 font-medium">Por confirmar (cajero)</p>
                       )}
                       {order.status === 'cancelled' && (
                         <p className="text-xs text-red-600 font-medium">Cancelado</p>
@@ -466,7 +489,13 @@ export default function Tables() {
               style={{ fontFamily: 'var(--font-sans)', fontWeight: 600 }}
             >
               <ChefHat size={16} />
-              {sendingToKitchen ? 'Enviando...' : 'Enviar a Cocina'}
+              {sendingToKitchen
+                ? 'Enviando...'
+                : isAdmin
+                ? reviewTableOrders.length > 0
+                  ? `Confirmar y enviar a cocina (${pendingTableOrders.length})`
+                  : 'Enviar a Cocina'
+                : 'Enviar al cajero'}
             </button>
             <button
               onClick={() => setShowMoveDialog(true)}
@@ -477,6 +506,7 @@ export default function Tables() {
               <ArrowRight size={16} />
               Cambiar Mesa
             </button>
+            {isAdmin && (
             <button
               onClick={() => {
                 setDiscountResult(null);
@@ -489,6 +519,7 @@ export default function Tables() {
               <CreditCard size={16} />
               Cobrar Mesa
             </button>
+            )}
           </div>
         </div>
       </div>

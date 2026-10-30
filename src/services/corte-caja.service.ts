@@ -19,9 +19,12 @@ export interface CorteCaja {
   cashPayments: number; // Pagos en efectivo
   cardPayments: number; // Pagos con tarjeta
   transferPayments: number; // Pagos por transferencia
-  theoreticalTotal: number; // Total teórico (cash + card + transfer)
+  theoreticalTotal: number; // Efectivo esperado en caja: fondo + efectivo + propinas - egresos
   countedAmount: number; // Cantidad física contada
-  difference: number; // Diferencia (conteo - teórico)
+  difference: number; // Diferencia (conteo - esperado). Positivo = sobra, negativo = falta
+  openingFloat?: number; // Fondo inicial de caja
+  tips?: number; // Propinas incluidas en el efectivo esperado
+  salesTotal?: number; // Ventas totales del periodo (todos los métodos)
   notes?: string;
   createdAt: Date;
 }
@@ -101,6 +104,9 @@ export async function crearCorteCaja(
       theoreticalTotal: corte.theoreticalTotal,
       countedAmount: corte.countedAmount,
       difference: corte.difference,
+      openingFloat: corte.openingFloat ?? 0,
+      tips: corte.tips ?? 0,
+      salesTotal: corte.salesTotal ?? corte.totalIncome,
       notes: corte.notes || '',
       createdAt: Timestamp.now(),
     };

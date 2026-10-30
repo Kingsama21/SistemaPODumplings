@@ -10,6 +10,7 @@ interface PrintResult {
 
 interface ElectronAPI {
   isElectron: boolean;
+  getNetworkUrls?: () => Promise<string[]>;
   getPrinters: () => Promise<unknown>;
   getPrinterSettings: () => Promise<unknown>;
   setPrinterSettings: (partial: unknown) => Promise<unknown>;

@@ -1,8 +1,12 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, useRef, ReactNode, useEffect } from 'react';
 import * as productosService from '../../services/productos.service';
 import * as categoriasService from '../../services/categorias.service';
 import * as ordenesService from '../../services/ordenes.service';
 import * as cajaService from '../../services/caja.service';
+import * as mesasService from '../../services/mesas.service';
+import * as configService from '../../services/config.service';
+import { toast } from 'sonner';
+import { useUser } from './UserContext';
 import { abrirCajon } from '../../services/cajon.service';
 import { printEgreso } from '../../services/printing.service';
 import {
@@ -16,8 +20,9 @@ import {
   ensureSellableStockItems,
 } from '../../services/inventory.service';
 import {
+  DEFAULT_AUTO_PROMOTIONS,
   loadAutoPromotions,
-  saveAutoPromotions,
+  mergeAutoPromotions,
   type AutoPromotionRule,
 } from '../../services/auto-promotions.service';
 
@@ -129,7 +134,9 @@ export interface TableOrderItem {
   product: Product;
   quantity: number;
   timestamp: Date;
-  status: 'pending' | 'sent' | 'cancelled'; // pending=no enviado, sent=enviado a cocina, cancelled=cancelado
+  // pending=no enviado, review=enviado por el mesero, esperando confirmación del cajero,
+  // sent=enviado a cocina, cancelled=cancelado
+  status: 'pending' | 'review' | 'sent' | 'cancelled';
   comment?: string;
   variants?: OrderItemVariants;
 }
@@ -181,7 +188,7 @@ interface AppContextType {
     change?: number
   ) => Promise<string>;
   updateOrderStatus: (id: string, status: Order['status']) => void;
-  updateOrderPaymentMethod: (id: string, paymentMethod: 'cash' | 'card' | 'transfer') => void;
+  updateOrderPaymentMethod: (id: string, paymentMethod: 'cash' | 'card' | 'transfer') => Promise<void>;
   deleteCashTransactionsByDateRange: (startDate: Date, endDate: Date) => void;
   deleteCashTransactionsByOrderId: (orderId: string) => Promise<number>;
   deleteAllOrders: () => Promise<number>;
@@ -232,6 +239,7 @@ interface AppContextType {
   clearTable: (tableNumber: number) => void;
   getTableOrders: (tableNumber: number) => TableOrderItem[];
   sendTableOrderToKitchen: (tableNumber: number, comments?: Record<string, string>) => Promise<string>;
+  submitTableForReview: (tableNumber: number, comments?: Record<string, string>) => void;
   moveTableOrders: (fromTable: number, toTable: number) => void;
   // Entregas Pendientes (Delivery sin pagar)
   pendingDeliveries: PendingDelivery[];
@@ -378,18 +386,37 @@ function buildKitchenCommentPayload(
   };
 }
 
+function serializeTable(table: Table): mesasService.MesaDoc {
+  // JSON elimina los `undefined` que Firestore rechaza; las fechas pasan a ISO
+  return JSON.parse(
+    JSON.stringify({
+      number: table.number,
+      total: table.total,
+      createdAt: new Date(table.createdAt).toISOString(),
+      orders: table.orders,
+    })
+  );
+}
+
+function deserializeTable(doc: mesasService.MesaDoc): Table {
+  return {
+    number: doc.number,
+    total: doc.total,
+    createdAt: new Date(doc.createdAt),
+    orders: (doc.orders as any[]).map(o => ({ ...o, timestamp: new Date(o.timestamp) })) as TableOrderItem[],
+  };
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Product[]>([]);
-  const [ingredients, setIngredients] = useState<Ingredient[]>(() =>
-    ensureSellableStockItems(loadFromStorage(STORAGE_KEYS.INGREDIENTS, initialIngredients))
-  );
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [cashTransactions, setCashTransactions] = useState<CashTransaction[]>([]);
-  const [discounts, setDiscounts] = useState<Discount[]>(() => loadFromStorage(STORAGE_KEYS.DISCOUNTS, []));
-  const [promotions, setPromotions] = useState<Promotion[]>(() => loadFromStorage(STORAGE_KEYS.PROMOTIONS, []));
-  const [autoPromotions, setAutoPromotions] = useState<AutoPromotionRule[]>(() => loadAutoPromotions());
-  const [compras, setCompras] = useState<Compra[]>(() => loadFromStorage(STORAGE_KEYS.COMPRAS, []));
+  const [discounts, setDiscounts] = useState<Discount[]>([]);
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [autoPromotions, setAutoPromotions] = useState<AutoPromotionRule[]>(DEFAULT_AUTO_PROMOTIONS);
+  const [compras, setCompras] = useState<Compra[]>([]);
   // Inicializar 10 mesas vacías
   const [tables, setTables] = useState<Table[]>(() => {
     return Array.from({ length: 10 }, (_, i) => ({
@@ -399,9 +426,67 @@ export function AppProvider({ children }: { children: ReactNode }) {
       createdAt: new Date(),
     }));
   });
+  // Siempre apunta al último estado de mesas (evita lecturas obsoletas en closures)
+  const tablesRef = useRef<Table[]>(tables);
+
+  const commitTables = (updated: Table[]) => {
+    const previous = tablesRef.current;
+    tablesRef.current = updated;
+    setTables(updated);
+
+    // Persistir solo las mesas que cambiaron para compartirlas entre dispositivos
+    updated.forEach(table => {
+      const before = previous.find(t => t.number === table.number);
+      if (before === table) return;
+      mesasService.saveMesa(serializeTable(table)).catch(error => {
+        console.error(`Error guardando mesa ${table.number}:`, error);
+      });
+    });
+  };
+
   // Entregas pendientes de pago
   const [pendingDeliveries, setPendingDeliveries] = useState<PendingDelivery[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Avisa al cajero cuando un mesero manda pedidos nuevos por confirmar
+  const { isAdmin } = useUser();
+  const reviewCountRef = useRef(0);
+  useEffect(() => {
+    const count = tables.reduce((n, t) => n + t.orders.filter(o => o.status === 'review').length, 0);
+    const previous = reviewCountRef.current;
+    reviewCountRef.current = count;
+    if (!isAdmin || count <= previous) return;
+
+    toast.info('Nuevo pedido de mesero por confirmar', { duration: 8000 });
+    try {
+      const audio = new AudioContext();
+      const osc = audio.createOscillator();
+      osc.frequency.value = 880;
+      osc.connect(audio.destination);
+      osc.start();
+      osc.stop(audio.currentTime + 0.25);
+    } catch {
+      // Sin audio disponible: basta con el aviso visual
+    }
+  }, [tables, isAdmin]);
+
+  // Mesas compartidas en tiempo real entre todos los dispositivos
+  useEffect(() => {
+    const unsubMesas = mesasService.onMesasChange(
+      (docs) => {
+        const base = tablesRef.current.map(t => ({ ...t }));
+        const byNumber = new Map(docs.map(d => [d.number, d]));
+        const merged = base.map(t => {
+          const remote = byNumber.get(t.number);
+          return remote ? deserializeTable(remote) : { number: t.number, orders: [], total: 0, createdAt: t.createdAt };
+        });
+        tablesRef.current = merged;
+        setTables(merged);
+      },
+      (error) => console.error('Error en mesas:', error)
+    );
+    return () => unsubMesas();
+  }, []);
 
   // ============================================
   // SINCRONIZAR CON FIREBASE EN TIEMPO REAL
@@ -646,14 +731,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Configuración compartida entre dispositivos (inventario, descuentos, promociones, compras).
+  // Si aún no existe en Firestore, se siembra con lo que haya en localStorage (migración).
   useEffect(() => {
-    setIngredients(current => {
-      const merged = ensureSellableStockItems(current);
-      if (merged.length !== current.length) {
-        saveToStorage(STORAGE_KEYS.INGREDIENTS, merged);
-      }
-      return merged;
-    });
+    const onError = (error: Error) => console.error('Error en configuración compartida:', error);
+    const subscriptions = [
+      configService.onConfigChange<Ingredient>('ingredients', items => {
+        if (items === null) {
+          const seed = ensureSellableStockItems(loadFromStorage(STORAGE_KEYS.INGREDIENTS, initialIngredients));
+          setIngredients(seed);
+          configService.seedConfigIfMissing('ingredients', seed).catch(onError);
+          return;
+        }
+        const merged = ensureSellableStockItems(items);
+        setIngredients(merged);
+        if (merged.length !== items.length) {
+          configService
+            .mutateConfig<Ingredient>('ingredients', current => ensureSellableStockItems(current))
+            .catch(onError);
+        }
+      }, onError),
+      configService.onConfigChange<Discount>('discounts', items => {
+        if (items === null) {
+          const seed = loadFromStorage<Discount[]>(STORAGE_KEYS.DISCOUNTS, []);
+          setDiscounts(seed);
+          configService.seedConfigIfMissing('discounts', seed).catch(onError);
+          return;
+        }
+        setDiscounts(items);
+      }, onError),
+      configService.onConfigChange<Promotion>('promotions', items => {
+        if (items === null) {
+          const seed = loadFromStorage<Promotion[]>(STORAGE_KEYS.PROMOTIONS, []);
+          setPromotions(seed);
+          configService.seedConfigIfMissing('promotions', seed).catch(onError);
+          return;
+        }
+        setPromotions(items);
+      }, onError),
+      configService.onConfigChange<AutoPromotionRule>('autoPromotions', items => {
+        if (items === null) {
+          const seed = loadAutoPromotions();
+          setAutoPromotions(seed);
+          configService.seedConfigIfMissing('autoPromotions', seed).catch(onError);
+          return;
+        }
+        setAutoPromotions(mergeAutoPromotions(items));
+      }, onError),
+      configService.onConfigChange<Compra>('compras', items => {
+        if (items === null) {
+          const seed = loadFromStorage<Compra[]>(STORAGE_KEYS.COMPRAS, []);
+          setCompras(seed);
+          configService.seedConfigIfMissing('compras', seed).catch(onError);
+          return;
+        }
+        setCompras(items);
+      }, onError),
+    ];
+    return () => subscriptions.forEach(unsubscribe => unsubscribe());
   }, []);
 
   // ============================================
@@ -662,19 +797,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deductInventoryForOrder = (items: OrderItem[]) => {
     const deductions = collectStockDeductions(items);
-    const { updated, missing } = applyStockDeductions(ingredients, deductions);
+    if (deductions.length === 0) return;
 
-    setIngredients(updated);
-    saveToStorage(STORAGE_KEYS.INGREDIENTS, updated);
-
-    if (missing.length > 0) {
-      console.warn('Stock no encontrado para:', missing.join(', '));
-    }
+    // Transacción sobre el stock del servidor: dos equipos vendiendo a la vez no se pisan.
+    // Un fallo aquí no debe invalidar una venta ya cobrada, solo se reporta.
+    let missing: string[] = [];
+    configService
+      .mutateConfig<Ingredient>('ingredients', current => {
+        const result = applyStockDeductions(current, deductions);
+        missing = result.missing;
+        return result.updated;
+      })
+      .then(() => {
+        if (missing.length > 0) {
+          console.warn('Stock no encontrado para:', missing.join(', '));
+        }
+      })
+      .catch(error => console.error('No se pudo descontar el inventario:', error));
   };
 
   // ============================================
   // FUNCIONES PARA ÓRDENES
   // ============================================
+
+  const rollbackOrder = async (ordenId: string) => {
+    try {
+      await ordenesService.deleteOrden(ordenId);
+    } catch (rollbackError) {
+      console.error('No se pudo revertir la orden', ordenId, rollbackError);
+    }
+  };
 
   const createOrder = async (
     items: OrderItem[],
@@ -730,16 +882,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? ` - Descuento: ${discountApplied.name}`
         : '';
 
-      // Registrar ingreso (siempre el total completo, el envío solo es para el ticket)
-      await cajaService.registrarIngreso(
-        total,
-        `Orden #${ordenId.slice(-4)}${orderType === 'delivery' ? ' - Delivery' : ''}${discountNote} (${paymentMethod === 'cash' ? 'Efectivo' : paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia'})`,
-        ordenId
-      );
+      try {
+        // Registrar ingreso (siempre el total completo, el envío solo es para el ticket)
+        await cajaService.registrarIngreso(
+          total,
+          `Orden #${ordenId.slice(-4)}${orderType === 'delivery' ? ' - Delivery' : ''}${discountNote} (${paymentMethod === 'cash' ? 'Efectivo' : paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia'})`,
+          ordenId,
+          paymentMethod
+        );
 
-      // Registrar propina si existe
-      if (tip && tip > 0) {
-        await cajaService.registrarPropina(tip, `Propina - Orden #${ordenId.slice(-4)}`, ordenId);
+        // Registrar propina si existe
+        if (tip && tip > 0) {
+          await cajaService.registrarPropina(tip, `Propina - Orden #${ordenId.slice(-4)}`, ordenId, paymentMethod);
+        }
+      } catch (cajaError) {
+        await rollbackOrder(ordenId);
+        throw cajaError;
       }
 
       deductInventoryForOrder(items);
@@ -768,13 +926,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateOrderPaymentMethod = (id: string, paymentMethod: 'cash' | 'card' | 'transfer') => {
+  const updateOrderPaymentMethod = async (id: string, paymentMethod: 'cash' | 'card' | 'transfer') => {
     try {
-      const updated = orders.map(o => 
-        o.id === id ? { ...o, paymentMethod } : o
-      );
-      setOrders(updated);
-      saveToStorage(STORAGE_KEYS.ORDERS, updated);
+      // Persistir en Firestore (orden y movimientos de caja) para que el corte sea correcto
+      await ordenesService.actualizarMetodoPagoOrden(id, paymentMethod);
+      await cajaService.actualizarMetodoPagoMovimientos(id, paymentMethod);
     } catch (error) {
       console.error('Error actualizando método de pago:', error);
       throw error;
@@ -845,68 +1001,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // FUNCIONES PARA INVENTARIO (INGREDIENTES)
   // ============================================
 
-  const addIngredient = (ingredient: Omit<Ingredient, 'id'>) => {
-    try {
-      const id = `ing_${Date.now()}`;
-      const newIngredient: Ingredient = {
-        ...ingredient,
-        id,
-        lastRestockedAt: new Date()
-      };
-      const updated = [...ingredients, newIngredient];
-      setIngredients(updated);
-      saveToStorage(STORAGE_KEYS.INGREDIENTS, updated);
-    } catch (error) {
-      console.error('Error agregando ingrediente:', error);
-      throw error;
-    }
+  const addIngredient = async (ingredient: Omit<Ingredient, 'id'>) => {
+    const newIngredient: Ingredient = {
+      ...ingredient,
+      id: `ing_${Date.now()}`,
+      lastRestockedAt: new Date(),
+    };
+    await configService.mutateConfig<Ingredient>('ingredients', current => [...current, newIngredient]);
   };
 
   const updateIngredient = async (id: string, ingredient: Partial<Ingredient>) => {
-    try {
-      const updated = ingredients.map(i => (i.id === id ? { ...i, ...ingredient } : i));
-      setIngredients(updated);
-      saveToStorage(STORAGE_KEYS.INGREDIENTS, updated);
-    } catch (error) {
-      console.error('Error actualizando ingrediente:', error);
-      throw error;
-    }
+    await configService.mutateConfig<Ingredient>('ingredients', current =>
+      current.map(i => (i.id === id ? { ...i, ...ingredient } : i))
+    );
   };
 
-  const deleteIngredient = (id: string) => {
-    try {
-      const updated = ingredients.filter(i => i.id !== id);
-      setIngredients(updated);
-      saveToStorage(STORAGE_KEYS.INGREDIENTS, updated);
-    } catch (error) {
-      console.error('Error eliminando ingrediente:', error);
-      throw error;
-    }
+  const deleteIngredient = async (id: string) => {
+    await configService.mutateConfig<Ingredient>('ingredients', current => current.filter(i => i.id !== id));
   };
 
   const updateIngredientStock = async (id: string, newStock: number) => {
-    try {
-      const updated = ingredients.map(i => 
-        i.id === id ? { ...i, stock: newStock, lastRestockedAt: new Date() } : i
-      );
-      setIngredients(updated);
-      saveToStorage(STORAGE_KEYS.INGREDIENTS, updated);
-    } catch (error) {
-      console.error('Error actualizando stock:', error);
-      throw error;
-    }
+    await configService.mutateConfig<Ingredient>('ingredients', current =>
+      current.map(i => (i.id === id ? { ...i, stock: newStock, lastRestockedAt: new Date() } : i))
+    );
   };
 
   const adjustIngredientStock = async (id: string, adjustment: number) => {
-    try {
-      const ingredient = ingredients.find(i => i.id === id);
-      if (!ingredient) throw new Error('Ingrediente no encontrado');
-      const newStock = Math.max(0, ingredient.stock + adjustment);
-      await updateIngredientStock(id, newStock);
-    } catch (error) {
-      console.error('Error ajustando stock:', error);
-      throw error;
-    }
+    // El ajuste se calcula sobre el stock más reciente del servidor (no sobre el estado local)
+    await configService.mutateConfig<Ingredient>('ingredients', current =>
+      current.map(i =>
+        i.id === id
+          ? { ...i, stock: Math.max(0, i.stock + adjustment), lastRestockedAt: new Date() }
+          : i
+      )
+    );
   };
 
   const getLowStockIngredients = (threshold: number = 5): Ingredient[] => {
@@ -918,43 +1046,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ============================================
 
   const createDiscount = async (discount: Omit<Discount, 'id' | 'createdAt'>): Promise<string> => {
-    try {
-      const id = `discount_${Date.now()}`;
-      const newDiscount: Discount = {
-        ...discount,
-        id,
-        createdAt: new Date(),
-      };
-      const updated = [...discounts, newDiscount];
-      setDiscounts(updated);
-      saveToStorage(STORAGE_KEYS.DISCOUNTS, updated);
-      return id;
-    } catch (error) {
-      console.error('Error creando descuento:', error);
-      throw error;
-    }
+    const id = `discount_${Date.now()}`;
+    const newDiscount: Discount = { ...discount, id, createdAt: new Date() };
+    await configService.mutateConfig<Discount>('discounts', current => [...current, newDiscount]);
+    return id;
   };
 
   const updateDiscount = async (id: string, discount: Partial<Discount>) => {
-    try {
-      const updated = discounts.map(d => (d.id === id ? { ...d, ...discount } : d));
-      setDiscounts(updated);
-      saveToStorage(STORAGE_KEYS.DISCOUNTS, updated);
-    } catch (error) {
-      console.error('Error actualizando descuento:', error);
-      throw error;
-    }
+    await configService.mutateConfig<Discount>('discounts', current =>
+      current.map(d => (d.id === id ? { ...d, ...discount } : d))
+    );
   };
 
   const deleteDiscount = async (id: string) => {
-    try {
-      const updated = discounts.filter(d => d.id !== id);
-      setDiscounts(updated);
-      saveToStorage(STORAGE_KEYS.DISCOUNTS, updated);
-    } catch (error) {
-      console.error('Error eliminando descuento:', error);
-      throw error;
-    }
+    await configService.mutateConfig<Discount>('discounts', current => current.filter(d => d.id !== id));
   };
 
   // ============================================
@@ -962,61 +1067,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ============================================
 
   const createPromotion = async (promotion: Omit<Promotion, 'id'>): Promise<string> => {
-    try {
-      const id = `promo_${Date.now()}`;
-      const newPromotion: Promotion = {
-        ...promotion,
-        id,
-      };
-      const updated = [...promotions, newPromotion];
-      setPromotions(updated);
-      saveToStorage(STORAGE_KEYS.PROMOTIONS, updated);
-      return id;
-    } catch (error) {
-      console.error('Error creando promoción:', error);
-      throw error;
-    }
+    const id = `promo_${Date.now()}`;
+    await configService.mutateConfig<Promotion>('promotions', current => [...current, { ...promotion, id }]);
+    return id;
   };
 
   const updatePromotion = async (id: string, promotion: Partial<Promotion>) => {
-    try {
-      const updated = promotions.map(p => (p.id === id ? { ...p, ...promotion } : p));
-      setPromotions(updated);
-      saveToStorage(STORAGE_KEYS.PROMOTIONS, updated);
-    } catch (error) {
-      console.error('Error actualizando promoción:', error);
-      throw error;
-    }
+    await configService.mutateConfig<Promotion>('promotions', current =>
+      current.map(p => (p.id === id ? { ...p, ...promotion } : p))
+    );
   };
 
   const deletePromotion = async (id: string) => {
-    try {
-      const updated = promotions.filter(p => p.id !== id);
-      setPromotions(updated);
-      saveToStorage(STORAGE_KEYS.PROMOTIONS, updated);
-    } catch (error) {
-      console.error('Error eliminando promoción:', error);
-      throw error;
-    }
+    await configService.mutateConfig<Promotion>('promotions', current => current.filter(p => p.id !== id));
   };
 
   const redeemPromotion = async (code: string): Promise<Discount | null> => {
     try {
-      const promo = promotions.find(
-        p => p.code.toUpperCase() === code.toUpperCase() && 
-             p.active && 
-             (!p.expiresAt || new Date(p.expiresAt) > new Date()) &&
-             (!p.usageLimit || p.usageCount < p.usageLimit)
-      );
-
-      if (!promo || !promo.discount.active) return null;
-
-      // Incrementar uso
-      await updatePromotion(promo.id, {
-        usageCount: promo.usageCount + 1,
+      let redeemed = null as Discount | null;
+      // Validación e incremento de uso en una sola transacción (respeta usageLimit entre dispositivos)
+      await configService.mutateConfig<Promotion>('promotions', current => {
+        redeemed = null;
+        const now = new Date();
+        return current.map(p => {
+          if (redeemed || p.code.toUpperCase() !== code.toUpperCase()) return p;
+          const valid =
+            p.active &&
+            p.discount.active &&
+            (!p.expiresAt || new Date(p.expiresAt) > now) &&
+            (!p.usageLimit || p.usageCount < p.usageLimit);
+          if (!valid) return p;
+          redeemed = p.discount;
+          return { ...p, usageCount: p.usageCount + 1 };
+        });
       });
-
-      return promo.discount;
+      return redeemed;
     } catch (error) {
       console.error('Error canjeando promoción:', error);
       return null;
@@ -1024,11 +1109,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateAutoPromotion = (id: AutoPromotionRule['id'], active: boolean) => {
-    const updated = autoPromotions.map(rule =>
-      rule.id === id ? { ...rule, active } : rule
-    );
-    setAutoPromotions(updated);
-    saveAutoPromotions(updated);
+    configService
+      .mutateConfig<AutoPromotionRule>(
+        'autoPromotions',
+        current => mergeAutoPromotions(current).map(rule => (rule.id === id ? { ...rule, active } : rule)),
+        DEFAULT_AUTO_PROMOTIONS
+      )
+      .catch(error => console.error('Error actualizando promoción automática:', error));
   };
 
   // ============ COMPRAS ============
@@ -1038,24 +1125,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
       id: Date.now().toString(),
       createdAt: new Date(),
     };
-    const newCompras = [...compras, newCompra];
-    setCompras(newCompras);
-    saveToStorage(STORAGE_KEYS.COMPRAS, newCompras);
+    await configService.mutateConfig<Compra>('compras', current => [...current, newCompra]);
     return newCompra.id;
   };
 
   const updateCompra = async (id: string, updates: Partial<Compra>) => {
-    const updated = compras.map(c =>
-      c.id === id ? { ...c, ...updates, total: updates.cantidad && updates.precioUnitario ? updates.cantidad * updates.precioUnitario : (updates.total || c.total) } : c
+    await configService.mutateConfig<Compra>('compras', current =>
+      current.map(c =>
+        c.id === id
+          ? {
+              ...c,
+              ...updates,
+              total:
+                updates.cantidad && updates.precioUnitario
+                  ? updates.cantidad * updates.precioUnitario
+                  : (updates.total || c.total),
+            }
+          : c
+      )
     );
-    setCompras(updated);
-    saveToStorage(STORAGE_KEYS.COMPRAS, updated);
   };
 
   const deleteCompra = async (id: string) => {
-    const filtered = compras.filter(c => c.id !== id);
-    setCompras(filtered);
-    saveToStorage(STORAGE_KEYS.COMPRAS, filtered);
+    await configService.mutateConfig<Compra>('compras', current => current.filter(c => c.id !== id));
   };
 
   const getComprasByDateRange = (startDate: Date, endDate: Date): Compra[] => {
@@ -1078,7 +1170,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const variantComment = buildVariantComment(options?.variants);
     const comment = [variantComment, options?.comment?.trim()].filter(Boolean).join(' | ') || undefined;
 
-    const updatedTables = tables.map(table => {
+    const updatedTables = tablesRef.current.map(table => {
       if (table.number === tableNumber) {
         const newOrder: TableOrderItem = {
           id: `order_${Date.now()}_${Math.random()}`,
@@ -1101,18 +1193,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return table;
     });
-    setTables(updatedTables);
+    commitTables(updatedTables);
   };
 
   const removeFromTable = (tableNumber: number, orderId: string) => {
-    const updatedTables = tables.map(table => {
+    const updatedTables = tablesRef.current.map(table => {
       if (table.number === tableNumber) {
         // Si está pending (no enviado), eliminar completamente
         // Si está sent (enviado), marcar como cancelled
         const newOrders = table.orders.map(o => {
           if (o.id === orderId) {
-            if (o.status === 'pending') {
-              // Eliminar completamente si aún no fue enviado
+            if (o.status === 'pending' || o.status === 'review') {
+              // Eliminar completamente si aún no fue enviado a cocina
               return null;
             } else if (o.status === 'sent') {
               // Marcar como cancelado si ya fue enviado
@@ -1133,16 +1225,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return table;
     });
-    setTables(updatedTables);
+    commitTables(updatedTables);
   };
 
   const getTableTotal = (tableNumber: number): number => {
-    const table = tables.find(t => t.number === tableNumber);
+    const table = tablesRef.current.find(t => t.number === tableNumber);
     return table ? table.total : 0;
   };
 
   const getTableOrders = (tableNumber: number): TableOrderItem[] => {
-    const table = tables.find(t => t.number === tableNumber);
+    const table = tablesRef.current.find(t => t.number === tableNumber);
     return table ? table.orders : [];
   };
 
@@ -1156,7 +1248,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saleItems?: OrderItem[]
   ): Promise<string> => {
     try {
-      const table = tables.find(t => t.number === tableNumber);
+      const table = tablesRef.current.find(t => t.number === tableNumber);
       if (!table || table.orders.length === 0) {
         throw new Error('Mesa vacía');
       }
@@ -1209,21 +1301,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       );
 
-      await ordenesService.completeActiveKitchenOrdersForTable(`Mesa ${tableNumber}`);
-
       const discountNote = discountApplied
         ? ` - Descuento: ${discountApplied.name}`
         : '';
 
-      await cajaService.registrarIngreso(
-        total,
-        `Mesa #${tableNumber}${discountNote} (${paymentMethod === 'cash' ? 'Efectivo' : paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia'})`,
-        ordenId
-      );
+      // Si el registro en caja falla, se revierte la orden para no dejar ventas sin ingreso
+      try {
+        await cajaService.registrarIngreso(
+          total,
+          `Mesa #${tableNumber}${discountNote} (${paymentMethod === 'cash' ? 'Efectivo' : paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia'})`,
+          ordenId,
+          paymentMethod
+        );
 
-      // Registrar propina si existe
-      if (tip && tip > 0) {
-        await cajaService.registrarPropina(tip, `Propina - Mesa #${tableNumber}`, ordenId);
+        // Registrar propina si existe
+        if (tip && tip > 0) {
+          await cajaService.registrarPropina(tip, `Propina - Mesa #${tableNumber}`, ordenId, paymentMethod);
+        }
+      } catch (cajaError) {
+        await rollbackOrder(ordenId);
+        throw cajaError;
+      }
+
+      // No crítico: cerrar las comandas de cocina de la mesa
+      try {
+        await ordenesService.completeActiveKitchenOrdersForTable(`Mesa ${tableNumber}`);
+      } catch (kitchenError) {
+        console.error('No se pudieron cerrar las comandas de cocina:', kitchenError);
       }
 
       deductInventoryForOrder(items);
@@ -1236,7 +1340,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const clearTable = (tableNumber: number) => {
-    const updatedTables = tables.map(table => {
+    const updatedTables = tablesRef.current.map(table => {
       if (table.number === tableNumber) {
         return {
           ...table,
@@ -1247,7 +1351,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return table;
     });
-    setTables(updatedTables);
+    commitTables(updatedTables);
   };
 
   const moveTableOrders = (fromTable: number, toTable: number) => {
@@ -1255,12 +1359,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error('Debe seleccionar una mesa diferente');
     }
 
-    const sourceTable = tables.find(t => t.number === fromTable);
+    const sourceTable = tablesRef.current.find(t => t.number === fromTable);
     if (!sourceTable || sourceTable.orders.length === 0) {
       throw new Error('Mesa origen vacía');
     }
 
-    const updatedTables = tables.map(table => {
+    const updatedTables = tablesRef.current.map(table => {
       // Mesa origen: vaciar órdenes
       if (table.number === fromTable) {
         return {
@@ -1280,17 +1384,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return table;
     });
-    setTables(updatedTables);
+    commitTables(updatedTables);
   };
 
   const sendTableOrderToKitchen = async (tableNumber: number, comments?: Record<string, string>): Promise<string> => {
     try {
-      const table = tables.find(t => t.number === tableNumber);
+      const table = tablesRef.current.find(t => t.number === tableNumber);
       if (!table || table.orders.length === 0) {
         throw new Error('Mesa vacía - no hay nada para enviar a cocina');
       }
 
-      const pendingItems = table.orders.filter(o => o.status === 'pending');
+      // Incluye lo que el cajero acaba de confirmar (review) y lo que aún no se envió (pending)
+      const pendingItems = table.orders.filter(o => o.status === 'pending' || o.status === 'review');
 
       if (pendingItems.length === 0) {
         throw new Error('No hay productos nuevos para enviar a cocina');
@@ -1298,10 +1403,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const total = pendingItems.reduce((sum, o) => sum + (o.product.price * o.quantity), 0);
 
+      // Une los comentarios sin repetir (el comentario del ítem ya puede incluir las variantes)
+      const joinComments = (parts: Array<string | undefined>) =>
+        [...new Set(parts.map(p => p?.trim()).filter(Boolean))].join(' | ') || undefined;
+
       const productos = pendingItems.map(o => {
         const extraComment = comments?.[o.id]?.trim();
         const variantComment = buildVariantComment(o.variants);
-        const comment = [variantComment, extraComment, o.comment?.trim()].filter(Boolean).join(' | ') || undefined;
+        const comment = joinComments([variantComment, extraComment, o.comment]);
         return {
           id: o.product.id,
           nombre: o.product.name,
@@ -1315,7 +1424,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         pendingItems.map(item => {
           const extraComment = comments?.[item.id]?.trim();
           const variantComment = buildVariantComment(item.variants);
-          const comment = [variantComment, extraComment, item.comment?.trim()].filter(Boolean).join(' | ') || undefined;
+          const comment = joinComments([variantComment, extraComment, item.comment]);
           return {
             name: item.product.name,
             quantity: item.quantity,
@@ -1343,11 +1452,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       );
 
-      const updatedTables = tables.map(t => {
+      const updatedTables = tablesRef.current.map(t => {
         if (t.number === tableNumber) {
           const updatedOrders = t.orders.map(o => {
-            if (o.status === 'pending') {
-              return { ...o, status: 'sent' as const, comment: comments?.[o.id]?.trim() };
+            if (o.status === 'pending' || o.status === 'review') {
+              return { ...o, status: 'sent' as const, comment: comments?.[o.id]?.trim() || o.comment };
             }
             return o;
           });
@@ -1358,13 +1467,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         return t;
       });
-      setTables(updatedTables);
+      commitTables(updatedTables);
 
       return ordenId;
     } catch (error) {
       console.error('Error enviando orden a cocina:', error);
       throw error;
     }
+  };
+
+  // El mesero manda los productos de la mesa; el cajero los confirma y entonces van a cocina
+  const submitTableForReview = (tableNumber: number, comments?: Record<string, string>) => {
+    const table = tablesRef.current.find(t => t.number === tableNumber);
+    if (!table || !table.orders.some(o => o.status === 'pending')) {
+      throw new Error('No hay productos nuevos para enviar');
+    }
+
+    const updatedTables = tablesRef.current.map(t => {
+      if (t.number !== tableNumber) return t;
+      return {
+        ...t,
+        orders: t.orders.map(o => {
+          if (o.status !== 'pending') return o;
+          const extra = comments?.[o.id]?.trim();
+          const comment = [...new Set([o.comment?.trim(), extra].filter(Boolean))].join(' | ') || undefined;
+          return { ...o, status: 'review' as const, ...(comment ? { comment } : {}) };
+        }),
+      };
+    });
+    commitTables(updatedTables);
   };
 
   // ============================================
@@ -1437,6 +1568,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const total = finalTotal ?? delivery.total;
       const items = saleItems ?? delivery.items;
 
+      // Evita cobrar dos veces la misma entrega desde otro dispositivo
+      if (await ordenesService.isOrdenPagada(deliveryId)) {
+        throw new Error('Esta entrega ya fue cobrada');
+      }
+
       await ordenesService.registrarPagoOrden(
         deliveryId,
         paymentMethod,
@@ -1449,11 +1585,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? ` - Descuento: ${discountApplied.name}`
         : '';
 
-      await cajaService.registrarIngreso(
-        total,
-        `Delivery - ${delivery.customerName}${discountNote} (${paymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta'})`,
-        deliveryId
-      );
+      try {
+        await cajaService.registrarIngreso(
+          total,
+          `Delivery - ${delivery.customerName}${discountNote} (${paymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta'})`,
+          deliveryId,
+          paymentMethod
+        );
+      } catch (cajaError) {
+        // Revertir a "pago pendiente" para poder reintentar
+        await ordenesService.revertirPagoOrden(deliveryId);
+        throw cajaError;
+      }
 
       deductInventoryForOrder(items);
 
@@ -1521,6 +1664,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         clearTable,
         getTableOrders,
         sendTableOrderToKitchen,
+        submitTableForReview,
         moveTableOrders,
         // Entregas Pendientes
         pendingDeliveries,

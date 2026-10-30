@@ -40,6 +40,8 @@ export default function Admin() {
     updateAutoPromotion,
     deleteAllOrders,
     deleteAllCashTransactions,
+    orders,
+    cashTransactions,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'products' | 'ingredients' | 'discounts' | 'promotions' | 'categories' | 'catalog' | 'compras' | 'cleanup' | 'printer'>('catalog');
@@ -566,7 +568,16 @@ export default function Admin() {
     }
 
     try {
-      console.log('Iniciando limpieza de datos...');
+      // Respaldo descargable antes de borrar, por si fue un error
+      const backup = { exportedAt: new Date().toISOString(), orders, cashTransactions };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `respaldo-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+
       const ordersDeleted = await deleteAllOrders();
       console.log(`✓ ${ordersDeleted} órdenes eliminadas`);
       

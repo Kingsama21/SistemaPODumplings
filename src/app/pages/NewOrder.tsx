@@ -264,7 +264,7 @@ export default function NewOrder() {
         status: 'pending',
         timestamp: new Date(),
         orderType: 'delivery',
-        paymentMethod: 'cash',
+        paymentMethod,
         deliveryInfo: deliveryInfo,
         amountReceived: received,
         change: calculatedChange,
@@ -284,7 +284,6 @@ export default function NewOrder() {
       setAmountReceived('');
       setChange(0);
       setSelectedDeliveryFee(null);
-      setPaymentMethod('cash');
       setPaymentMethod('cash');
 
       // IMPRIMIR TICKET INMEDIATAMENTE

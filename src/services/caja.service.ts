@@ -9,6 +9,7 @@ import {
   Unsubscribe,
   Timestamp,
   deleteDoc,
+  updateDoc,
   doc,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -75,7 +76,8 @@ export function onMovimientosChange(
 export async function registrarIngreso(
   monto: number,
   motivo: string,
-  ordenId?: string
+  ordenId?: string,
+  paymentMethod?: 'cash' | 'card' | 'transfer'
 ): Promise<string> {
   try {
     const now = Timestamp.now();
@@ -85,7 +87,10 @@ export async function registrarIngreso(
       description: motivo,
       timestamp: now,
       createdAt: now,
-      paymentMethod: motivo.includes('Efectivo') ? 'cash' : motivo.includes('Tarjeta') ? 'card' : 'transfer',
+      // El método explícito manda; el texto de la descripción es solo respaldo
+      paymentMethod:
+        paymentMethod ??
+        (motivo.includes('Efectivo') ? 'cash' : motivo.includes('Tarjeta') ? 'card' : 'transfer'),
     };
 
     // Guardar ordenId si existe
@@ -109,7 +114,8 @@ export async function registrarIngreso(
 export async function registrarPropina(
   monto: number,
   motivo: string,
-  ordenId?: string
+  ordenId?: string,
+  paymentMethod: 'cash' | 'card' | 'transfer' = 'cash'
 ): Promise<string> {
   try {
     const now = Timestamp.now();
@@ -119,7 +125,7 @@ export async function registrarPropina(
       description: motivo,
       timestamp: now,
       createdAt: now,
-      paymentMethod: 'cash', // Las propinas siempre son en efectivo
+      paymentMethod, // Solo las propinas en efectivo están físicamente en caja
     };
 
     if (ordenId) {
@@ -196,12 +202,12 @@ export async function calcularResumenCaja(): Promise<ResumenCaja> {
     const movimientos = await getMovimientos();
     
     const totalIngresos = movimientos
-      .filter(m => m.tipo === 'ingreso')
-      .reduce((sum, m) => sum + m.monto, 0);
+      .filter(m => m.type === 'income')
+      .reduce((sum, m) => sum + (m.amount ?? 0), 0);
     
     const totalEgresos = movimientos
-      .filter(m => m.tipo === 'egreso')
-      .reduce((sum, m) => sum + m.monto, 0);
+      .filter(m => m.type === 'expense')
+      .reduce((sum, m) => sum + (m.amount ?? 0), 0);
     
     return {
       totalIngresos,
@@ -222,12 +228,12 @@ export async function calcularResumenCajaPorFecha(fecha: Date): Promise<ResumenC
     const movimientos = await getMovimientosPorFecha(fecha);
     
     const totalIngresos = movimientos
-      .filter(m => m.tipo === 'ingreso')
-      .reduce((sum, m) => sum + m.monto, 0);
+      .filter(m => m.type === 'income')
+      .reduce((sum, m) => sum + (m.amount ?? 0), 0);
     
     const totalEgresos = movimientos
-      .filter(m => m.tipo === 'egreso')
-      .reduce((sum, m) => sum + m.monto, 0);
+      .filter(m => m.type === 'expense')
+      .reduce((sum, m) => sum + (m.amount ?? 0), 0);
     
     return {
       totalIngresos,
@@ -259,12 +265,12 @@ export function onResumenCajaChange(
         } as MovimientoCaja));
 
         const totalIngresos = movimientos
-          .filter(m => m.tipo === 'ingreso')
-          .reduce((sum, m) => sum + m.monto, 0);
+          .filter(m => m.type === 'income')
+          .reduce((sum, m) => sum + (m.amount ?? 0), 0);
         
         const totalEgresos = movimientos
-          .filter(m => m.tipo === 'egreso')
-          .reduce((sum, m) => sum + m.monto, 0);
+          .filter(m => m.type === 'expense')
+          .reduce((sum, m) => sum + (m.amount ?? 0), 0);
 
         callback({
           totalIngresos,
@@ -428,4 +434,24 @@ export async function deleteAllCashTransactions(): Promise<number> {
     console.error('Error eliminando todas las transacciones:', error);
     throw error;
   }
+}
+
+/**
+ * Corrige el método de pago de los ingresos y propinas de una orden,
+ * para que el corte de caja refleje el cambio.
+ */
+export async function actualizarMetodoPagoMovimientos(
+  ordenId: string,
+  paymentMethod: 'cash' | 'card' | 'transfer'
+): Promise<number> {
+  const snapshot = await getDocs(query(collection(db, CASH_COLLECTION), where('ordenId', '==', ordenId)));
+  let updated = 0;
+  for (const d of snapshot.docs) {
+    const type = d.data().type;
+    if (type === 'income' || type === 'tip') {
+      await updateDoc(doc(db, CASH_COLLECTION, d.id), { paymentMethod });
+      updated++;
+    }
+  }
+  return updated;
 }

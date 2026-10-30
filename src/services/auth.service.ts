@@ -16,24 +16,41 @@ const DEMO_USERS = {
   'carlos': {
     email: 'carlos@example.com',
     role: 'mesero' as UserRole,
-    password: '', // Sin contraseña
+    passwordHash: '', // Sin contraseña
   },
   'alejandra': {
     email: 'alejandra@example.com',
     role: 'mesero' as UserRole,
-    password: '', // Sin contraseña
+    passwordHash: '', // Sin contraseña
   },
   'alexis': {
     email: 'alexis@example.com',
     role: 'mesero' as UserRole,
-    password: '', // Sin contraseña
+    passwordHash: '', // Sin contraseña
   },
   'admin': {
     email: 'admin@example.com',
     role: 'admin' as UserRole,
-    password: 'Dumplings',
+    // La contraseña ya no vive en texto plano: se compara su hash SHA-256.
+    // Se puede cambiar definiendo VITE_ADMIN_PASSWORD_HASH en .env
+    passwordHash:
+      (import.meta.env.VITE_ADMIN_PASSWORD_HASH as string | undefined) ||
+      '0ce9ba359d689b47e8a26b10905b79597c549266fa1f9ec576e8161cadb377c6',
   },
 };
+
+async function sha256Hex(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function roleForName(name: string): UserRole | null {
+  const key = Object.keys(DEMO_USERS).find(k => k.toLowerCase() === name.toLowerCase());
+  return key ? DEMO_USERS[key as keyof typeof DEMO_USERS].role : null;
+}
 
 /**
  * Login LOCAL - Sin Firebase
@@ -53,13 +70,13 @@ export async function loginUser(name: string, password: string): Promise<UserPro
     const demoUser = DEMO_USERS[nameKey as keyof typeof DEMO_USERS];
 
     // Validar contraseña si es requerida
-    if (demoUser.password && demoUser.password !== password) {
+    if (demoUser.passwordHash && demoUser.passwordHash !== (await sha256Hex(password))) {
       throw new Error('Contraseña incorrecta');
     }
 
     // Crear perfil de usuario
     const userProfile: UserProfile = {
-      id: `user_${Date.now()}`,
+      id: `user_${nameKey}`,
       email: demoUser.email,
       name: nameKey, // Usar el nombre como está configurado
       role: demoUser.role,
@@ -95,7 +112,11 @@ export function getCurrentUser(): UserProfile | null {
   try {
     const userStr = localStorage.getItem(STORAGE_KEY);
     if (!userStr) return null;
-    return JSON.parse(userStr) as UserProfile;
+    const stored = JSON.parse(userStr) as UserProfile;
+    // El rol siempre se deriva del nombre: editar el rol en localStorage no sirve
+    const role = roleForName(stored.name);
+    if (!role) return null;
+    return { ...stored, role };
   } catch (error) {
     console.error('Error obteniendo usuario actual:', error);
     return null;

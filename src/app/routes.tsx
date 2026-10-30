@@ -44,7 +44,7 @@ export const router = createBrowserRouter([
   {
     path: '/nueva-orden',
     Component: () => (
-      <ProtectedRoute>
+      <ProtectedRoute requiredRole="admin">
         <NewOrder />
       </ProtectedRoute>
     ),

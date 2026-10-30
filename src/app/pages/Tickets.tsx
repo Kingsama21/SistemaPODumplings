@@ -42,9 +42,14 @@ export default function Tickets() {
     }
   };
 
-  const handleUpdatePayment = (orderId: string, newMethod: 'cash' | 'card' | 'transfer') => {
-    updateOrderPaymentMethod(orderId, newMethod);
-    toast.success('Método de pago actualizado');
+  const handleUpdatePayment = async (orderId: string, newMethod: 'cash' | 'card' | 'transfer') => {
+    try {
+      await updateOrderPaymentMethod(orderId, newMethod);
+      toast.success('Método de pago actualizado');
+    } catch (error) {
+      console.error('Error actualizando método de pago:', error);
+      toast.error('No se pudo actualizar el método de pago');
+    }
     setEditingPaymentId(null);
     setSelectedPayment(null);
   };

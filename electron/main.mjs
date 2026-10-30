@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '../server.js';
+import { getLocalIPv4Addresses } from '../network-urls.mjs';
 import {
   getPrinters,
   getPrinterSettings,
@@ -134,6 +135,13 @@ async function boot() {
   createWindow();
 }
 
+function registerNetworkIpc() {
+  // URLs que los meseros abren en su celular (misma red WiFi)
+  ipcMain.handle('network:get-urls', async () =>
+    getLocalIPv4Addresses().map((ip) => `http://${ip}:${PORT}/login`)
+  );
+}
+
 function registerPrintingIpc() {
   ipcMain.handle('printing:get-printers', async () => getPrinters());
   ipcMain.handle('printing:get-settings', async () => getPrinterSettings());
@@ -176,6 +184,7 @@ function registerPrintingIpc() {
 
 app.whenReady().then(() => {
   registerPrintingIpc();
+  registerNetworkIpc();
   boot().catch((err) => {
     console.error('Error al iniciar Electron:', err);
     app.quit();
